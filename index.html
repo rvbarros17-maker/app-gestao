@@ -1,19 +1,24 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-  <link rel="manifest" href="manifest.json">
-  <meta name="theme-color" content="#00aaff">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Geladinhos Gourmet</title>
+  <title>Totaliz - Gestão Inteligente</title>
+  <meta name="theme-color" content="#6366f1">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Totaliz">
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icon-192.png">
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-gray-100">
   <div id="root"></div>
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-    import { getFirestore, collection, doc, setDoc, getDocs, deleteDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+    import { getFirestore, collection, doc, setDoc, getDocs, deleteDoc, query, where } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
+    import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
     const firebaseConfig = {
       apiKey: "AIzaSyAXJReFAHvGx8oqX3KU7yB37L8fNa3DkiA",
       authDomain: "app-gestao-47669.firebaseapp.com",
@@ -25,24 +30,212 @@
 
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
+    const auth = getAuth(app);
 
     let state = {
+      user: null,
+      showLoginScreen: true,
+      loginMode: 'login',
       activeTab: 'dashboard',
+      modalTipo: null,
       insumos: [],
       receitas: [],
       produtos: [],
       clientes: [],
       vendas: [],
       movimentacoes: [],
+      caixas: [],
+      caixaAtual: null,
+      despesasRecorrentes: [],
       showModal: false,
       modalType: '',
       editingId: null,
       loading: true
     };
 
+
+    // ===== SISTEMA DE AUTENTICAÇÃO =====
+    onAuthStateChanged(auth, (user) => {
+      if (user) {
+        state.user = user;
+        state.showLoginScreen = false;
+    
+
+      // ===== FLUXO DE CAIXA =====
+      document.querySelectorAll('[data-action="save-abrir-caixa"]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const saldoInicial = parseFloat(document.getElementById('saldoInicial').value) || 0;
+          
+          const novoCaixa = {
+            id: Date.now(),
+            dataAbertura: new Date().toISOString(),
+            saldoInicial,
+            saldoFinal: 0,
+            status: 'aberto'
+          };
+          
+          await saveToFirebase('caixas', novoCaixa.id, novoCaixa);
+          state.caixas.push(novoCaixa);
+          state.caixaAtual = novoCaixa;
+          
+          state.showModal = false;
+          render();
+        });
+      });
+
+      document.querySelectorAll('[data-action="save-sangria"]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const valor = parseFloat(document.getElementById('valorSangria').value);
+          const motivo = document.getElementById('motivoSangria').value;
+          
+          if (!valor || !motivo) return alert('Preencha todos os campos');
+          
+          const mov = {
+            id: Date.now(),
+            tipo: 'saida',
+            categoria: 'sangria',
+            data: new Date().toISOString(),
+            descricao: `Sangria: ${motivo}`,
+            valor
+          };
+          
+          await saveToFirebase('movimentacoes', mov.id, mov);
+          state.movimentacoes.push(mov);
+          
+          state.showModal = false;
+          render();
+        });
+      });
+
+      document.querySelectorAll('[data-action="save-reforco"]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const valor = parseFloat(document.getElementById('valorReforco').value);
+          const motivo = document.getElementById('motivoReforco').value;
+          
+          if (!valor || !motivo) return alert('Preencha todos os campos');
+          
+          const mov = {
+            id: Date.now(),
+            tipo: 'entrada',
+            categoria: 'reforco',
+            data: new Date().toISOString(),
+            descricao: `Reforço: ${motivo}`,
+            valor
+          };
+          
+          await saveToFirebase('movimentacoes', mov.id, mov);
+          state.movimentacoes.push(mov);
+          
+          state.showModal = false;
+          render();
+        });
+      });
+
+      document.querySelectorAll('[data-action="save-despesa"]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const valor = parseFloat(document.getElementById('valorDespesa').value);
+          const descricao = document.getElementById('descricaoDespesa').value;
+          const categoria = document.getElementById('categoriaDespesa').value;
+          
+          if (!valor || !descricao) return alert('Preencha todos os campos');
+          
+          const mov = {
+            id: Date.now(),
+            tipo: 'saida',
+            categoria,
+            data: new Date().toISOString(),
+            descricao,
+            valor
+          };
+          
+          await saveToFirebase('movimentacoes', mov.id, mov);
+          state.movimentacoes.push(mov);
+          
+          state.showModal = false;
+          render();
+        });
+      });
+
+      // Calcular diferença no fechamento de caixa
+      const saldoRealInput = document.getElementById('saldoReal');
+      if (saldoRealInput && state.modalType === 'fechar-caixa') {
+        saldoRealInput.addEventListener('input', () => {
+          const movHoje = state.movimentacoes.filter(m => new Date(m.data).toDateString() === new Date().toDateString());
+          const entradas = movHoje.filter(m => m.tipo === 'entrada').reduce((t, m) => t + m.valor, 0);
+          const saidas = movHoje.filter(m => m.tipo === 'saida').reduce((t, m) => t + m.valor, 0);
+          const saldoCalculado = state.caixaAtual.saldoInicial + entradas - saidas;
+          const saldoReal = parseFloat(saldoRealInput.value) || 0;
+          const diferenca = saldoReal - saldoCalculado;
+          
+          const diferencaDiv = document.getElementById('diferenca-caixa');
+          if (diferencaDiv && diferenca !== 0) {
+            diferencaDiv.innerHTML = `
+              <div class="p-3 rounded ${diferenca > 0 ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}">
+                <p class="text-sm font-medium ${diferenca > 0 ? 'text-green-700' : 'text-red-700'}">
+                  ${diferenca > 0 ? 'Sobra' : 'Falta'}: R$ ${Math.abs(diferenca).toFixed(2)}
+                </p>
+              </div>
+            `;
+          } else if (diferencaDiv) {
+            diferencaDiv.innerHTML = '';
+          }
+        });
+      }
+
+    loadAllData();
+      } else {
+        state.user = null;
+        state.showLoginScreen = true;
+        state.loading = false;
+        render();
+      }
+    });
+
+    async function handleLogin(email, password) {
+      try {
+        await signInWithEmailAndPassword(auth, email, password);
+      } catch (error) {
+        if (error.code === 'auth/invalid-credential') {
+          alert('Email ou senha incorretos!');
+        } else {
+          alert('Erro ao fazer login: ' + error.message);
+        }
+      }
+    }
+
+    async function handleRegister(email, password, confirmPassword) {
+      if (password !== confirmPassword) return alert('As senhas não coincidem!');
+      if (password.length < 6) return alert('A senha deve ter pelo menos 6 caracteres!');
+      try {
+        await createUserWithEmailAndPassword(auth, email, password);
+        alert('✅ Conta criada com sucesso! Faça login.');
+        state.loginMode = 'login';
+        render();
+      } catch (error) {
+        if (error.code === 'auth/email-already-in-use') {
+          alert('Este email já está cadastrado!');
+        } else {
+          alert('Erro ao criar conta: ' + error.message);
+        }
+      }
+    }
+
+    async function handleLogout() {
+      if (confirm('Deseja realmente sair?')) {
+        await signOut(auth);
+        state.insumos = [];
+        state.receitas = [];
+        state.produtos = [];
+        state.clientes = [];
+        state.vendas = [];
+        state.movimentacoes = [];
+      }
+    }
+
     async function saveToFirebase(collectionName, id, data) {
       try {
-        await setDoc(doc(db, collectionName, String(id)), data);
+        const dataWithUser = { ...data, userId: state.user.uid };
+        await setDoc(doc(db, collectionName, String(id)), dataWithUser);
         return true;
       } catch (e) {
         console.error('Erro ao salvar:', e);
@@ -53,7 +246,8 @@
 
     async function loadFromFirebase(collectionName) {
       try {
-        const querySnapshot = await getDocs(collection(db, collectionName));
+        const q = query(collection(db, collectionName), where("userId", "==", state.user.uid));
+        const querySnapshot = await getDocs(q);
         const data = [];
         querySnapshot.forEach((docSnap) => {
           const docData = docSnap.data();
@@ -81,13 +275,15 @@
       render();
       
       try {
-        const [insumos, receitas, produtos, clientes, vendas, movimentacoes] = await Promise.all([
+        const [insumos, receitas, produtos, clientes, vendas, movimentacoes, caixas, despesasRecorrentes] = await Promise.all([
           loadFromFirebase('insumos'),
           loadFromFirebase('receitas'),
           loadFromFirebase('produtos'),
           loadFromFirebase('clientes'),
           loadFromFirebase('vendas'),
-          loadFromFirebase('movimentacoes')
+          loadFromFirebase('movimentacoes'),
+          loadFromFirebase('caixas'),
+          loadFromFirebase('despesasRecorrentes')
         ]);
 
         state.insumos = insumos;
@@ -96,6 +292,11 @@
         state.clientes = clientes;
         state.vendas = vendas;
         state.movimentacoes = movimentacoes;
+        state.caixas = caixas;
+        state.despesasRecorrentes = despesasRecorrentes;
+        
+        // Verificar se há caixa aberto
+        state.caixaAtual = caixas.find(c => c.status === 'aberto') || null;
         state.loading = false;
         
         render();
@@ -106,14 +307,118 @@
       }
     }
 
+
+    function renderLoginScreen() {
+      if (state.loginMode === 'login') {
+        return `
+          <div class="min-h-screen flex items-center justify-center p-4">
+            <div class="bg-white rounded-lg shadow-2xl p-8 max-w-md w-full">
+              <div class="text-center mb-8">
+                <img src="icon-192.png" alt="Totaliz" class="w-24 h-24 mx-auto mb-4 rounded-2xl shadow-lg">
+                <h1 class="text-3xl font-bold text-gray-800 mb-2">Totaliz</h1>
+                <p class="text-gray-600">Sistema de Gestão</p>
+              </div>
+              <form id="login-form" class="space-y-4">
+                <div>
+                  <label class="block text-sm font-medium mb-2">Email</label>
+                  <input type="email" id="email" required class="w-full border rounded px-4 py-2 focus:ring-2 focus:ring-blue-500" placeholder="seu@email.com">
+                </div>
+                <div>
+                  <label class="block text-sm font-medium mb-2">Senha</label>
+                  <input type="password" id="password" required class="w-full border rounded px-4 py-2 focus:ring-2 focus:ring-blue-500" placeholder="••••••">
+                </div>
+                <button type="submit" class="w-full bg-blue-500 text-white py-3 rounded hover:bg-blue-600 font-medium">Entrar</button>
+              </form>
+              <div class="mt-6 text-center">
+                <p class="text-sm text-gray-600">
+                  Não tem conta? 
+                  <button data-action="toggle-mode" class="text-blue-500 hover:underline font-medium">Criar conta</button>
+                </p>
+              </div>
+            </div>
+          </div>
+        `;
+      } else {
+        return `
+          <div class="min-h-screen flex items-center justify-center p-4">
+            <div class="bg-white rounded-lg shadow-2xl p-8 max-w-md w-full">
+              <div class="text-center mb-8">
+                <img src="icon-192.png" alt="Totaliz" class="w-24 h-24 mx-auto mb-4 rounded-2xl shadow-lg">
+                <h1 class="text-3xl font-bold text-gray-800 mb-2">Criar Conta</h1>
+                <p class="text-gray-600">Cadastre-se gratuitamente</p>
+              </div>
+              <form id="register-form" class="space-y-4">
+                <div>
+                  <label class="block text-sm font-medium mb-2">Email</label>
+                  <input type="email" id="reg-email" required class="w-full border rounded px-4 py-2 focus:ring-2 focus:ring-blue-500" placeholder="seu@email.com">
+                </div>
+                <div>
+                  <label class="block text-sm font-medium mb-2">Senha</label>
+                  <input type="password" id="reg-password" required class="w-full border rounded px-4 py-2 focus:ring-2 focus:ring-blue-500" placeholder="Mínimo 6 caracteres">
+                </div>
+                <div>
+                  <label class="block text-sm font-medium mb-2">Confirmar Senha</label>
+                  <input type="password" id="reg-confirm" required class="w-full border rounded px-4 py-2 focus:ring-2 focus:ring-blue-500" placeholder="Digite a senha novamente">
+                </div>
+                <button type="submit" class="w-full bg-green-500 text-white py-3 rounded hover:bg-green-600 font-medium">Criar Conta</button>
+              </form>
+              <div class="mt-6 text-center">
+                <p class="text-sm text-gray-600">
+                  Já tem conta? 
+                  <button data-action="toggle-mode" class="text-blue-500 hover:underline font-medium">Fazer login</button>
+                </p>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+    }
+
+    function attachLoginListeners() {
+      const loginForm = document.getElementById('login-form');
+      if (loginForm) {
+        loginForm.addEventListener('submit', (e) => {
+          e.preventDefault();
+          const email = document.getElementById('email').value;
+          const password = document.getElementById('password').value;
+          handleLogin(email, password);
+        });
+      }
+
+      const registerForm = document.getElementById('register-form');
+      if (registerForm) {
+        registerForm.addEventListener('submit', (e) => {
+          e.preventDefault();
+          const email = document.getElementById('reg-email').value;
+          const password = document.getElementById('reg-password').value;
+          const confirm = document.getElementById('reg-confirm').value;
+          handleRegister(email, password, confirm);
+        });
+      }
+
+      document.querySelectorAll('[data-action="toggle-mode"]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          state.loginMode = state.loginMode === 'login' ? 'register' : 'login';
+          render();
+        });
+      });
+    }
+
     function render() {
       const root = document.getElementById('root');
+      
+      // Tela de Login
+      if (state.showLoginScreen) {
+        root.innerHTML = renderLoginScreen();
+        attachLoginListeners();
+        return;
+      }
       
       if (state.loading) {
         root.innerHTML = `
           <div class="min-h-screen flex items-center justify-center">
             <div class="text-center">
-              <div class="text-6xl mb-4">⏳</div>
+               <div class="text-6xl mb-4">⏳</div>>
               <p class="text-xl font-bold">Carregando dados da nuvem...</p>
               <p class="text-gray-600 mt-2">Aguarde um momento</p>
             </div>
@@ -125,15 +430,25 @@
       root.innerHTML = `
         <div class="min-h-screen p-4">
           <div class="max-w-7xl mx-auto">
-            <div class="bg-gradient-to-r from-blue-500 to-purple-600 text-white p-6 rounded-lg shadow-lg mb-6">
-              <h1 class="text-3xl font-bold">🍧 Geladinhos Gourmet</h1>
-              <p class="text-blue-100">Sistema Completo de Gestão - Cloud ☁️</p>
+            <div class="bg-gradient-to-r from-purple-600 via-pink-500 to-orange-500 text-white p-6 rounded-lg shadow-lg mb-6">
+              <div class="flex justify-between items-center">
+                <div>
+                  <h1 class="text-3xl font-bold">Totaliz</h1>
+                  <p class="text-blue-100">Gestão Inteligente de Produção</p>
+                </div>
+                <div class="text-right">
+                  <p class="text-sm text-blue-100 mb-2">👤 ${state.user?.email || ''}</p>
+                  <button data-action="logout" class="bg-white/20 hover:bg-white/30 px-4 py-2 rounded text-sm transition">
+                    🚪 Sair
+                  </button>
+                </div>
+              </div>
             </div>
 
             ${state.activeTab !== 'dashboard' ? `
               <div class="mb-4">
                 <button data-action="voltar-dashboard" class="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600 flex items-center gap-2">
-                  ← Voltar ao Menu
+                    ← Voltar ao Menu
                 </button>
               </div>
             ` : ''}
@@ -148,6 +463,259 @@
       `;
 
       attachEventListeners();
+      
+      // Listeners para despesas recorrentes (setTimeout garante que elementos existam)
+      setTimeout(() => {
+        // Salvar despesa
+        const btnSaveDespesa = document.querySelectorAll('[data-action="save-despesa-rec"]');
+        btnSaveDespesa.forEach(btn => {
+          btn.onclick = async () => {
+            const nome = document.getElementById('nomeDespesaRec')?.value;
+            const valor = parseFloat(document.getElementById('valorDespesaRec')?.value);
+            const tipo = document.getElementById('tipoDespesaRec')?.value;
+            const diaVencimento = parseInt(document.getElementById('diaVencimento')?.value);
+            const categoria = document.getElementById('categoriaDespesaRec')?.value;
+            
+            if (!nome || !valor || !diaVencimento) {
+              return alert('Preencha todos os campos');
+            }
+            
+            const novaDespesa = {
+              id: Date.now(),
+              nome,
+              valor,
+              tipo,
+              diaVencimento,
+              categoria,
+              dataInicio: new Date().toISOString()
+            };
+            
+            if (tipo === 'parcelado') {
+              novaDespesa.totalParcelas = parseInt(document.getElementById('totalParcelas')?.value) || 12;
+            }
+            
+            await saveToFirebase('despesasRecorrentes', novaDespesa.id, novaDespesa);
+            state.despesasRecorrentes.push(novaDespesa);
+            
+            state.showModal = false;
+            render();
+          };
+        });
+        
+        // Toggle parcelas
+        const tipoDespSelect = document.getElementById('tipoDespesaRec');
+        if (tipoDespSelect) {
+          tipoDespSelect.onchange = () => {
+            const parcelasDiv = document.getElementById('parcelas-div');
+            if (parcelasDiv) {
+              parcelasDiv.style.display = tipoDespSelect.value === 'parcelado' ? 'block' : 'none';
+            }
+          };
+        }
+        
+        // Pagar despesa
+        const btnPagarDespesa = document.querySelectorAll('[data-action="pagar-despesa-rec"]');
+        btnPagarDespesa.forEach(btn => {
+          btn.onclick = async (e) => {
+            const id = e.currentTarget.dataset.id;
+            const valor = parseFloat(e.currentTarget.dataset.valor);
+            const nome = e.currentTarget.dataset.nome;
+            
+            if (confirm(`Registrar pagamento de ${nome} - R$ ${valor.toFixed(2)}?`)) {
+              const hoje = new Date();
+              const mesAnoKey = `${hoje.getMonth()}-${hoje.getFullYear()}`;
+              
+              const mov = {
+                id: Date.now(),
+                tipo: 'saida',
+                categoria: 'despesa-recorrente',
+                despesaRecorrenteId: parseInt(id),
+                mesAno: mesAnoKey,
+                data: new Date().toISOString(),
+                descricao: `Pagamento: ${nome}`,
+                valor
+              };
+              
+              await saveToFirebase('movimentacoes', mov.id, mov);
+              state.movimentacoes.push(mov);
+              
+              alert('✅ Pagamento registrado!');
+              render();
+            }
+          };
+        });
+        
+        // Deletar despesa
+        const btnDeleteDespesa = document.querySelectorAll('[data-action="delete-despesa-rec"]');
+        btnDeleteDespesa.forEach(btn => {
+          btn.onclick = async (e) => {
+            if (confirm('Tem certeza que deseja excluir?')) {
+              const id = e.currentTarget.dataset.id;
+              await deleteFromFirebase('despesasRecorrentes', id);
+              state.despesasRecorrentes = state.despesasRecorrentes.filter(d => d.id != id);
+              render();
+            }
+          };
+        });
+
+        // ===== FLUXO DE CAIXA =====
+        
+        // Salvar sangria
+        const btnSaveSangria = document.querySelectorAll('[data-action="save-sangria"]');
+        btnSaveSangria.forEach(btn => {
+          btn.onclick = async () => {
+            const valor = parseFloat(document.getElementById('valorSangria')?.value);
+            const motivo = document.getElementById('motivoSangria')?.value;
+            
+            if (!valor || !motivo) return alert('Preencha todos os campos');
+            
+            const mov = {
+              id: Date.now(),
+              tipo: 'saida',
+              categoria: 'sangria',
+              data: new Date().toISOString(),
+              descricao: `Sangria: ${motivo}`,
+              valor
+            };
+            
+            await saveToFirebase('movimentacoes', mov.id, mov);
+            state.movimentacoes.push(mov);
+            
+            state.showModal = false;
+            render();
+          };
+        });
+        
+        // Salvar reforço
+        const btnSaveReforco = document.querySelectorAll('[data-action="save-reforco"]');
+        btnSaveReforco.forEach(btn => {
+          btn.onclick = async () => {
+            const valor = parseFloat(document.getElementById('valorReforco')?.value);
+            const motivo = document.getElementById('motivoReforco')?.value;
+            
+            if (!valor || !motivo) return alert('Preencha todos os campos');
+            
+            const mov = {
+              id: Date.now(),
+              tipo: 'entrada',
+              categoria: 'reforco',
+              data: new Date().toISOString(),
+              descricao: `Reforço: ${motivo}`,
+              valor
+            };
+            
+            await saveToFirebase('movimentacoes', mov.id, mov);
+            state.movimentacoes.push(mov);
+            
+            state.showModal = false;
+            render();
+          };
+        });
+        
+        // Salvar despesa do caixa
+        const btnSaveDespesaCaixa = document.querySelectorAll('[data-action="save-despesa-caixa"]');
+        btnSaveDespesaCaixa.forEach(btn => {
+          btn.onclick = async () => {
+            const valor = parseFloat(document.getElementById('valorDespesa')?.value);
+            const descricao = document.getElementById('descricaoDespesa')?.value;
+            const categoria = document.getElementById('categoriaDespesa')?.value;
+            
+            if (!valor || !descricao) return alert('Preencha todos os campos');
+            
+            const mov = {
+              id: Date.now(),
+              tipo: 'saida',
+              categoria: categoria || 'despesa',
+              data: new Date().toISOString(),
+              descricao,
+              valor
+            };
+            
+            await saveToFirebase('movimentacoes', mov.id, mov);
+            state.movimentacoes.push(mov);
+            
+            state.showModal = false;
+            render();
+          };
+        });
+
+        
+
+        
+        // Abrir caixa
+        const btnAbrirCaixa = document.querySelectorAll('[data-action="save-abrir-caixa"]');
+        btnAbrirCaixa.forEach(btn => {
+          btn.onclick = async () => {
+            const saldoInicial = parseFloat(document.getElementById('saldoInicial')?.value);
+            
+            if (isNaN(saldoInicial) || saldoInicial < 0) {
+              return alert('Informe um saldo inicial válido');
+            }
+            
+            const novoCaixa = {
+              id: Date.now(),
+              dataAbertura: new Date().toISOString(),
+              saldoInicial: saldoInicial,
+              status: 'aberto'
+            };
+            
+            await saveToFirebase('caixas', novoCaixa.id, novoCaixa);
+            state.caixas.push(novoCaixa);
+            state.caixaAtual = novoCaixa;
+            
+            state.showModal = false;
+            render();
+          };
+        });
+        // Salvar fechar caixa
+        const btnFecharCaixa = document.querySelectorAll('[data-action="save-fechar-caixa"]');
+        btnFecharCaixa.forEach(btn => {
+          btn.onclick = async () => {
+            const saldoReal = parseFloat(document.getElementById('saldoReal')?.value);
+            
+            if (!state.caixaAtual) return alert('Nenhum caixa aberto');
+            if (isNaN(saldoReal)) return alert('Informe o saldo real');
+            
+            state.caixaAtual.dataFechamento = new Date().toISOString();
+            state.caixaAtual.saldoFinal = saldoReal;
+            state.caixaAtual.status = 'fechado';
+            
+            await saveToFirebase('caixas', state.caixaAtual.id, state.caixaAtual);
+            state.caixaAtual = null;
+            
+            alert('✅ Caixa fechado com sucesso!');
+            state.showModal = false;
+            render();
+          };
+        });
+
+        
+        // ===== LISTA DE COMPRAS - RISCAR ITENS =====
+        
+        // Listener para riscar itens marcados
+        const checkboxesCompras = document.querySelectorAll('[data-insumo-check]');
+        checkboxesCompras.forEach(checkbox => {
+          checkbox.onchange = (e) => {
+            const insumoId = e.target.dataset.insumoCheck;
+            const itemDiv = document.getElementById(`item-compra-${insumoId}`);
+            const itemContent = itemDiv?.querySelector('.item-content');
+            
+            if (itemContent) {
+              if (e.target.checked) {
+                // Riscar - adicionar classe
+                itemContent.style.textDecoration = 'line-through';
+                itemContent.style.opacity = '0.5';
+                itemDiv.style.backgroundColor = '#f0fdf4'; // verde clarinho
+              } else {
+                // Desmarcar - remover riscado
+                itemContent.style.textDecoration = 'none';
+                itemContent.style.opacity = '1';
+                itemDiv.style.backgroundColor = '#ffffff'; // branco
+              }
+            }
+          };
+        });
+      }, 50);
     }
 
     function renderTab(id, icon, label) {
@@ -170,6 +738,8 @@
         case 'receitas': return renderReceitas();
         case 'produtos': return renderProdutos();
         case 'vendas': return renderVendas();
+        case 'caixa': return renderCaixa();
+        case 'despesas-recorrentes': return renderDespesasRecorrentes();
         case 'financeiro': return renderFinanceiro();
         case 'relatorios': return renderRelatorios();
         case 'lista-compras': return renderListaCompras();
@@ -184,7 +754,7 @@
       
       return `
         <div class="text-center mb-6">
-          <h2 class="text-3xl font-bold mb-2">🍧 Geladinhos Gourmet</h2>
+          <h2 class="text-3xl font-bold mb-2">Totaliz</h2>
           <p class="text-gray-600">Selecione uma opção abaixo</p>
         </div>
 
@@ -208,7 +778,7 @@
           </button>
 
           <button data-nav="produtos" class="bg-gradient-to-br from-pink-500 to-pink-600 text-white p-6 rounded-lg shadow-lg hover:shadow-xl transition-all hover:scale-105">
-            <div class="text-5xl mb-3">🍧</div>
+            <div class="text-5xl mb-3">📦</div>
             <h3 class="text-xl font-bold mb-2">Produtos</h3>
             <p class="text-sm opacity-90">${state.produtos.length} em estoque</p>
           </button>
@@ -217,6 +787,12 @@
             <div class="text-5xl mb-3">🛒</div>
             <h3 class="text-xl font-bold mb-2">Vendas</h3>
             <p class="text-sm opacity-90">${state.vendas.length} registradas</p>
+          </button>
+
+          <button data-nav="caixa" class="bg-gradient-to-br from-cyan-500 to-cyan-600 text-white p-6 rounded-lg shadow-lg hover:shadow-xl transition-all hover:scale-105">
+            <div class="text-5xl mb-3">💵</div>
+            <h3 class="text-xl font-bold mb-2">Fluxo de Caixa</h3>
+            <p class="text-sm opacity-90">${state.caixaAtual ? 'Caixa Aberto' : 'Caixa Fechado'}</p>
           </button>
 
           <button data-nav="financeiro" class="bg-gradient-to-br from-yellow-500 to-yellow-600 text-white p-6 rounded-lg shadow-lg hover:shadow-xl transition-all hover:scale-105">
@@ -231,7 +807,13 @@
             <p class="text-sm opacity-90">Análises e dados</p>
           </button>
 
-          <button data-nav="lista-compras" class="bg-gradient-to-br from-red-500 to-red-600 text-white p-6 rounded-lg shadow-lg hover:shadow-xl transition-all hover:scale-105">
+          <button data-nav="despesas-recorrentes" class="bg-gradient-to-br from-red-500 to-red-600 text-white p-6 rounded-lg shadow-lg hover:shadow-xl transition-all hover:scale-105">
+            <div class="text-5xl mb-3">📅</div>
+            <h3 class="text-xl font-bold mb-2">Despesas Recorrentes</h3>
+            <p class="text-sm opacity-90">${state.despesasRecorrentes.length} cadastradas</p>
+          </button>
+
+          <button data-nav="lista-compras" class="bg-gradient-to-br from-orange-500 to-orange-600 text-white p-6 rounded-lg shadow-lg hover:shadow-xl transition-all hover:scale-105">
             <div class="text-5xl mb-3">🛒</div>
             <h3 class="text-xl font-bold mb-2">Lista de Compras</h3>
             <p class="text-sm opacity-90">${state.insumos.filter(i => i.quantidade <= i.estoqueMinimo).length} itens faltando</p>
@@ -269,7 +851,7 @@
           </button>
         </div>
         <div class="mb-4">
-          <input type="text" id="search-cliente" placeholder="🔍 Buscar cliente..." class="w-full border rounded px-4 py-2">
+         <input type="text" id="search-cliente" placeholder="🔍 Buscar cliente..." class="w-full border rounded px-4 py-2">
         </div>
         ${clientesOrdenados.length > 0 ? `
           <div class="overflow-x-auto">
@@ -398,7 +980,7 @@
                     <p class="text-sm text-gray-600">Custo base: R$ ${r.custoTotal.toFixed(2)}</p>
                   </div>
                   <div class="flex gap-2">
-                    <button data-action="edit-receita" data-id="${r.id}" class="text-blue-500 hover:text-blue-600">✏️</button>
+                     <button data-action="edit-receita" data-id="${r.id}" class="text-blue-500 hover:text-blue-600">✏️</button>
                     <button data-action="delete-receita" data-id="${r.id}" class="text-red-500 hover:text-red-600">🗑️</button>
                   </div>
                 </div>
@@ -406,7 +988,7 @@
                   <p class="text-sm font-medium mb-1">Ingredientes:</p>
                   ${r.ingredientes.map(ing => {
                     const ins = state.insumos.find(x => x.id == ing.insumoId);
-                    return `<p class="text-sm text-gray-600">• ${ins?.nome || 'Insumo'}: ${ing.quantidade} ${ins?.unidade || ''} (${ing.tipo === 'fixo' ? 'fixo' : 'por unid'})</p>`;
+                    return `<p class="text-sm text-gray-600">🔸 ${ins?.nome || 'Insumo'}: ${ing.quantidade} ${ins?.unidade || ''} (${ing.tipo === 'fixo' ? 'fixo' : 'por unid'})</p>`;
                   }).join('')}
                 </div>
               </div>
@@ -429,20 +1011,20 @@
       const produtosIntermediarios = state.produtos.filter(p => p.ehIntermediario);
       
       return `
-        <h2 class="text-2xl font-bold mb-4">🍧 Produtos</h2>
+        <h2 class="text-2xl font-bold mb-4">📦 Produtos</h2>
         
         <div class="flex gap-2 mb-4">
           <button data-action="modal" data-modal="producao" data-tipo="final" class="bg-orange-500 text-white px-4 py-2 rounded hover:bg-orange-600">
-            🍧 Produzir Produto Final
+           📦 Produzir Produto Final
           </button>
           <button data-action="modal" data-modal="producao" data-tipo="intermediario" class="bg-purple-500 text-white px-4 py-2 rounded hover:bg-purple-600">
-            🧪 Produzir Intermediário
+             🧪 Produzir Intermediário
           </button>
         </div>
 
         <!-- Produtos Finais -->
         <div class="mb-6">
-          <h3 class="text-xl font-bold mb-3 text-orange-600">🍧 Produtos Finais (Para Venda)</h3>
+          <h3 class="text-xl font-bold mb-3 text-orange-600">📦 Produtos Finais (Para Venda)</h3>
           ${produtosFinais.length > 0 ? `
             <div class="overflow-x-auto">
               <table class="w-full">
@@ -484,7 +1066,7 @@
 
         <!-- Produtos Intermediários -->
         <div>
-          <h3 class="text-xl font-bold mb-3 text-purple-600">🧪 Produtos Intermediários (Viram Insumos)</h3>
+         <h3 class="text-xl font-bold mb-3 text-purple-600">🧪 Produtos Intermediários (Viram Insumos)</h3>
           ${produtosIntermediarios.length > 0 ? `
             <div class="overflow-x-auto">
               <table class="w-full">
@@ -504,7 +1086,7 @@
                       <td class="px-4 py-3">R$ ${p.custoUnitario.toFixed(2)}</td>
                       <td class="px-4 py-3">
                         <div class="flex gap-2">
-                          <button data-action="transferir-insumo" data-id="${p.id}" class="text-green-500 hover:text-green-600" title="Transferir para Insumos">📦</button>
+                           <button data-action="transferir-insumo" data-id="${p.id}" class="text-green-500 hover:text-green-600" title="Transferir para Insumos">📦</button>
                           <button data-action="delete-produto" data-id="${p.id}" class="text-red-500 hover:text-red-600">🗑️</button>
                         </div>
                       </td>
@@ -527,7 +1109,7 @@
         <div class="flex justify-between items-center mb-4">
           <h2 class="text-2xl font-bold">Vendas</h2>
           <button data-action="modal" data-modal="venda" class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600">
-            ➕ Nova Venda
+           ➕ Nova Venda
           </button>
         </div>
         ${state.vendas.length > 0 ? `
@@ -535,7 +1117,7 @@
             ${state.vendas.slice().reverse().map(v => {
               const cli = state.clientes.find(c => c.id == v.clienteId);
               return `
-                <div class="p-4">
+                <div class="p-4 hover:bg-gray-50 transition">
                   <div class="flex justify-between items-start mb-2">
                     <div>
                       <p class="font-medium">${cli?.nome || 'Cliente'}</p>
@@ -544,6 +1126,10 @@
                     <div class="text-right">
                       <p class="font-bold text-green-600">R$ ${v.valorFinal.toFixed(2)}</p>
                       <p class="text-xs text-gray-500 capitalize">${v.formaPagamento}</p>
+                      <div class="flex gap-2 mt-2 justify-end">
+                        <button data-action="edit-pagamento-venda" data-id="${v.id}" class="text-blue-500 hover:text-blue-600 text-xs" title="Editar Forma de Pagamento">✏️ Pagamento</button>
+                        <button data-action="delete-venda" data-id="${v.id}" class="text-red-500 hover:text-red-600 text-xs" title="Deletar Venda">🗑️</button>
+                      </div>
                     </div>
                   </div>
                   <div class="text-sm text-gray-600">
@@ -567,6 +1153,253 @@
       `;
     }
 
+
+    function renderCaixa() {
+      const hoje = new Date().toDateString();
+      const movHoje = state.movimentacoes.filter(m => new Date(m.data).toDateString() === hoje);
+      
+      if (!state.caixaAtual) {
+        return `
+          <div class="text-center py-12">
+            <div class="text-6xl mb-4">🔒</div>
+            <h2 class="text-2xl font-bold mb-4">Caixa Fechado</h2>
+            <p class="text-gray-600 mb-6">Abra o caixa para começar a registrar movimentações</p>
+            <button data-action="modal" data-modal="abrir-caixa" class="bg-green-500 text-white px-6 py-3 rounded-lg hover:bg-green-600 font-medium">
+              Abrir Caixa
+            </button>
+            
+            ${state.caixas.length > 0 ? `
+              <div class="mt-8">
+                <h3 class="text-lg font-bold mb-4">Histórico de Caixas</h3>
+                <div class="grid gap-3 max-w-2xl mx-auto">
+                  ${state.caixas.slice().reverse().slice(0, 5).map(c => `
+                    <div class="border rounded-lg p-4 text-left">
+                      <div class="flex justify-between items-center">
+                        <div>
+                          <p class="font-medium">${new Date(c.dataAbertura).toLocaleDateString('pt-BR')}</p>
+                          <p class="text-sm text-gray-600">Abertura: R$ ${c.saldoInicial.toFixed(2)}</p>
+                        </div>
+                        <div class="text-right">
+                          <p class="text-sm text-gray-600">Fechamento:</p>
+                          <p class="font-bold ${c.saldoFinal >= c.saldoInicial ? 'text-green-600' : 'text-red-600'}">R$ ${c.saldoFinal.toFixed(2)}</p>
+                        </div>
+                      </div>
+                    </div>
+                  `).join('')}
+                </div>
+              </div>
+            ` : ''}
+          </div>
+        `;
+      }
+
+      const entradas = movHoje.filter(m => m.tipo === 'entrada').reduce((t, m) => t + m.valor, 0);
+      const saidas = movHoje.filter(m => m.tipo === 'saida').reduce((t, m) => t + m.valor, 0);
+      const saldoAtual = state.caixaAtual.saldoInicial + entradas - saidas;
+
+      return `
+        <div class="mb-6">
+          <div class="flex justify-between items-center mb-4">
+            <h2 class="text-2xl font-bold">💰 Fluxo de Caixa</h2>
+            <button data-action="modal" data-modal="fechar-caixa" class="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600">
+              Fechar Caixa
+            </button>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+            <div class="bg-blue-50 border border-blue-200 p-4 rounded-lg">
+              <p class="text-sm text-blue-700">Saldo Inicial</p>
+              <p class="text-2xl font-bold text-blue-800">R$ ${state.caixaAtual.saldoInicial.toFixed(2)}</p>
+            </div>
+            <div class="bg-green-50 border border-green-200 p-4 rounded-lg">
+              <p class="text-sm text-green-700">Entradas</p>
+              <p class="text-2xl font-bold text-green-800">R$ ${entradas.toFixed(2)}</p>
+              <p class="text-xs text-green-600">${movHoje.filter(m => m.tipo === 'entrada').length} movimentos</p>
+            </div>
+            <div class="bg-red-50 border border-red-200 p-4 rounded-lg">
+              <p class="text-sm text-red-700">Saídas</p>
+              <p class="text-2xl font-bold text-red-800">R$ ${saidas.toFixed(2)}</p>
+              <p class="text-xs text-red-600">${movHoje.filter(m => m.tipo === 'saida').length} movimentos</p>
+            </div>
+            <div class="bg-purple-50 border border-purple-200 p-4 rounded-lg">
+              <p class="text-sm text-purple-700">Saldo Atual</p>
+              <p class="text-2xl font-bold text-purple-800">R$ ${saldoAtual.toFixed(2)}</p>
+            </div>
+          </div>
+
+          <div class="flex gap-2 mb-4">
+            <button data-action="modal" data-modal="sangria" class="bg-orange-500 text-white px-4 py-2 rounded hover:bg-orange-600">
+              Sangria
+            </button>
+            <button data-action="modal" data-modal="reforco" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
+              Reforço
+            </button>
+            <button data-action="modal" data-modal="despesa" class="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600">
+              Despesa
+            </button>
+          </div>
+        </div>
+
+        <div class="bg-white border rounded-lg">
+          <div class="p-4 border-b">
+            <h3 class="font-bold">Movimentações de Hoje</h3>
+          </div>
+          ${movHoje.length > 0 ? `
+            <div class="divide-y">
+              ${movHoje.slice().reverse().map(m => `
+                <div class="p-4 flex justify-between items-center">
+                  <div>
+                    <p class="font-medium">${m.descricao}</p>
+                    <p class="text-xs text-gray-500">${new Date(m.data).toLocaleTimeString('pt-BR')}</p>
+                  </div>
+                  <div class="text-right">
+                    <p class="font-bold ${m.tipo === 'entrada' ? 'text-green-600' : 'text-red-600'}">
+                      ${m.tipo === 'entrada' ? '+' : '-'} R$ ${m.valor.toFixed(2)}
+                    </p>
+                    <p class="text-xs text-gray-500">${m.categoria || m.tipo}</p>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          ` : `
+            <div class="p-8 text-center text-gray-500">
+              <p>Nenhuma movimentação hoje</p>
+            </div>
+          `}
+        </div>
+      `;
+    }
+
+
+    function renderDespesasRecorrentes() {
+      const hoje = new Date();
+      const mesAtual = hoje.getMonth();
+      const anoAtual = hoje.getFullYear();
+      
+      // Calcular despesas do mês
+      const despesasMes = [];
+      state.despesasRecorrentes.forEach(d => {
+        if (d.tipo === 'mensal') {
+          const vencimento = new Date(anoAtual, mesAtual, d.diaVencimento);
+          despesasMes.push({...d, vencimento, parcela: null});
+        } else if (d.tipo === 'parcelado') {
+          const dataInicio = new Date(d.dataInicio);
+          const mesesDesdeInicio = (anoAtual - dataInicio.getFullYear()) * 12 + (mesAtual - dataInicio.getMonth());
+          
+          if (mesesDesdeInicio >= 0 && mesesDesdeInicio < d.totalParcelas) {
+            const vencimento = new Date(anoAtual, mesAtual, d.diaVencimento);
+            despesasMes.push({...d, vencimento, parcela: mesesDesdeInicio + 1});
+          }
+        }
+      });
+      
+      despesasMes.sort((a, b) => a.vencimento - b.vencimento);
+      
+      const mesAnoKey = `${mesAtual}-${anoAtual}`;
+      despesasMes.forEach(d => {
+        const pagamento = state.movimentacoes.find(m => 
+          m.categoria === 'despesa-recorrente' && 
+          m.despesaRecorrenteId == d.id &&
+          m.mesAno === mesAnoKey
+        );
+        d.paga = !!pagamento;
+      });
+      
+      const vencidas = despesasMes.filter(d => !d.paga && d.vencimento.getTime() < hoje.getTime()).length;
+      const aVencer = despesasMes.filter(d => !d.paga && d.vencimento.getTime() >= hoje.getTime()).length;
+      
+      return `
+        <div class="flex justify-between items-center mb-4">
+          <h2 class="text-2xl font-bold">📅 Despesas Recorrentes</h2>
+          <button data-action="modal" data-modal="nova-despesa-recorrente" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
+            ➕ Nova Despesa
+          </button>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+          <div class="bg-red-50 border border-red-200 p-4 rounded-lg">
+            <p class="text-sm text-red-700">Vencidas</p>
+            <p class="text-3xl font-bold text-red-800">${vencidas}</p>
+          </div>
+          <div class="bg-yellow-50 border border-yellow-200 p-4 rounded-lg">
+            <p class="text-sm text-yellow-700">A Vencer</p>
+            <p class="text-3xl font-bold text-yellow-800">${aVencer}</p>
+          </div>
+          <div class="bg-green-50 border border-green-200 p-4 rounded-lg">
+            <p class="text-sm text-green-700">Total Mensal</p>
+            <p class="text-3xl font-bold text-green-800">R$ ${despesasMes.reduce((t, d) => t + d.valor, 0).toFixed(2)}</p>
+          </div>
+        </div>
+
+        <h3 class="text-lg font-bold mb-3">Despesas de ${['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'][mesAtual]}/${anoAtual}</h3>
+        
+        ${despesasMes.length > 0 ? `
+          <div class="space-y-2">
+            ${despesasMes.map(d => {
+              const vencida = !d.paga && d.vencimento < hoje;
+              const bgColor = d.paga ? 'bg-green-50 border-green-200' : vencida ? 'bg-red-50 border-red-200' : 'bg-white border-gray-200';
+              
+              return `
+                <div class="border ${bgColor} rounded-lg p-4">
+                  <div class="flex justify-between items-start">
+                    <div class="flex-1">
+                      <div class="flex items-center gap-2 mb-1">
+                        <p class="font-bold">${d.nome}</p>
+                        ${d.parcela ? `<span class="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded">Parcela ${d.parcela}/${d.totalParcelas}</span>` : ''}
+                        ${d.paga ? '<span class="text-xs bg-green-500 text-white px-2 py-1 rounded">✓ PAGA</span>' : ''}
+                        ${vencida ? '<span class="text-xs bg-red-500 text-white px-2 py-1 rounded">⚠️ VENCIDA</span>' : ''}
+                      </div>
+                      <p class="text-sm text-gray-600">Vencimento: ${d.vencimento.toLocaleDateString('pt-BR')}</p>
+                      <p class="text-sm text-gray-600">Categoria: ${d.categoria}</p>
+                    </div>
+                    <div class="text-right">
+                      <p class="text-xl font-bold text-red-600">R$ ${d.valor.toFixed(2)}</p>
+                      <div class="flex gap-2 mt-2">
+                        ${!d.paga ? `<button data-action="pagar-despesa-rec" data-id="${d.id}" data-valor="${d.valor}" data-nome="${d.nome}" class="text-green-500 hover:text-green-600 text-sm">💰 Pagar</button>` : ''}
+                        <button data-action="delete-despesa-rec" data-id="${d.id}" class="text-red-500 hover:text-red-600 text-sm">🗑️</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        ` : '<div class="text-center py-8 text-gray-500"><p>Nenhuma despesa neste mês</p></div>'}
+
+        <div class="mt-6">
+          <h3 class="text-lg font-bold mb-3">Todas as Despesas Cadastradas</h3>
+          ${state.despesasRecorrentes.length > 0 ? `
+            <div class="grid gap-3">
+              ${state.despesasRecorrentes.map(d => `
+                <div class="border rounded-lg p-4 bg-white">
+                  <div class="flex justify-between items-start">
+                    <div>
+                      <p class="font-bold">${d.nome}</p>
+                      <p class="text-sm text-gray-600">
+                        ${d.tipo === 'mensal' ? `Todo dia ${d.diaVencimento}` : `Parcelado em ${d.totalParcelas}x - Dia ${d.diaVencimento}`}
+                      </p>
+                      <p class="text-sm text-gray-600">Categoria: ${d.categoria}</p>
+                    </div>
+                    <div class="text-right">
+                      <p class="text-lg font-bold">R$ ${d.valor.toFixed(2)}</p>
+                      <button data-action="delete-despesa-rec" data-id="${d.id}" class="text-red-500 hover:text-red-600 mt-2">🗑️</button>
+                    </div>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          ` : `
+            <div class="text-center py-8 text-gray-500">
+              <p>Nenhuma despesa cadastrada</p>
+              <button data-action="modal" data-modal="nova-despesa-recorrente" class="mt-4 bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
+                Cadastrar Primeira Despesa
+              </button>
+            </div>
+          `}
+        </div>
+      `;
+    }
+
     function renderFinanceiro() {
       const totalEntradas = state.movimentacoes.filter(m => m.tipo === 'entrada').reduce((t, m) => t + (m.valor || 0), 0);
       const devedores = state.clientes.filter(c => c.saldo < 0);
@@ -576,25 +1409,28 @@
         <h2 class="text-2xl font-bold mb-4">Financeiro</h2>
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
           <div class="bg-green-50 border border-green-200 p-4 rounded-lg">
-            <p class="text-sm text-green-700">Recebido</p>
+            <p class="text-sm text-green-700">💰 Recebido</p>
             <p class="text-2xl font-bold text-green-800">R$ ${totalEntradas.toFixed(2)}</p>
+            <p class="text-xs text-green-600">Valores já recebidos</p>
           </div>
-          <div class="bg-red-50 border border-red-200 p-4 rounded-lg">
-            <p class="text-sm text-red-700">Dívidas</p>
-            <p class="text-2xl font-bold text-red-800">
+          <div class="bg-orange-50 border border-orange-200 p-4 rounded-lg">
+            <p class="text-sm text-orange-700">📋 A Receber</p>
+            <p class="text-2xl font-bold text-orange-800">
               R$ ${devedores.reduce((t, c) => t + Math.abs(c.saldo), 0).toFixed(2)}
             </p>
+            <p class="text-xs text-orange-600">${devedores.length} clientes devendo</p>
           </div>
           <div class="bg-blue-50 border border-blue-200 p-4 rounded-lg">
-            <p class="text-sm text-blue-700">Créditos</p>
+            <p class="text-sm text-blue-700">💳 Créditos</p>
             <p class="text-2xl font-bold text-blue-800">
               R$ ${creditos.reduce((t, c) => t + c.saldo, 0).toFixed(2)}
             </p>
+            <p class="text-xs text-blue-600">${creditos.length} clientes com crédito</p>
           </div>
         </div>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div class="border rounded-lg p-4">
-            <h3 class="font-bold mb-3 text-red-700">Devedores</h3>
+            <h3 class="font-bold mb-3 text-orange-700">📋 A Receber</h3>
             ${devedores.length > 0 ? `
               <div class="space-y-2">
                 ${devedores.map(c => `
@@ -603,14 +1439,14 @@
                       <p class="font-medium">${c.nome}</p>
                       <p class="text-xs text-gray-500">${c.telefone}</p>
                     </div>
-                    <p class="font-bold text-red-600">R$ ${Math.abs(c.saldo).toFixed(2)}</p>
+                    <p class="font-bold text-orange-600">R$ ${Math.abs(c.saldo).toFixed(2)}</p>
                   </div>
                 `).join('')}
               </div>
-            ` : '<p class="text-sm text-gray-500">Nenhum devedor</p>'}
+            ` : '<p class="text-sm text-gray-500">Nenhum valor a receber</p>'}
           </div>
           <div class="border rounded-lg p-4">
-            <h3 class="font-bold mb-3 text-green-700">Com Crédito</h3>
+            <h3 class="font-bold mb-3 text-green-700">💳 Com Crédito</h3>
             ${creditos.length > 0 ? `
               <div class="space-y-2">
                 ${creditos.map(c => `
@@ -712,7 +1548,7 @@
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
           <div class="border rounded-lg p-4">
-            <h3 class="font-bold mb-3 text-orange-700">🏆 Produtos Mais Vendidos</h3>
+             <h3 class="font-bold mb-3 text-orange-700">🏆 Produtos Mais Vendidos</h3>
             ${rankingProdutos.length > 0 ? `
               <div class="space-y-2">
                 ${rankingProdutos.map((p, i) => `
@@ -748,7 +1584,7 @@
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
           <div class="border rounded-lg p-4">
-            <h3 class="font-bold mb-3 text-green-700">💳 Vendas por Pagamento</h3>
+           <h3 class="font-bold mb-3 text-green-700">💳 Vendas por Pagamento</h3>
             ${Object.keys(porPagamento).length > 0 ? `
               <div class="space-y-2">
                 ${Object.entries(porPagamento).map(([forma, valor]) => `
@@ -762,7 +1598,7 @@
           </div>
 
           <div class="border rounded-lg p-4">
-            <h3 class="font-bold mb-3 text-purple-700">💰 Custo dos Produtos</h3>
+           <h3 class="font-bold mb-3 text-purple-700">💰 Custo dos Produtos</h3>
             ${state.produtos.length > 0 ? `
               <div class="space-y-2">
                 ${state.produtos.map(p => {
@@ -788,7 +1624,7 @@
         </div>
 
         <div class="border rounded-lg p-4">
-          <h3 class="font-bold mb-3 text-red-700">📦 Detalhamento de Custos</h3>
+          <<h3 class="font-bold mb-3 text-red-700">📦 Detalhamento de Custos</h3>
           ${state.produtos.length > 0 ? `
             <div class="space-y-4">
               ${state.produtos.map(p => {
@@ -836,19 +1672,20 @@
       const insumosFaltando = state.insumos.filter(i => i.quantidade <= i.estoqueMinimo).sort((a, b) => a.nome.localeCompare(b.nome));
       
       return `
-        <h2 class="text-2xl font-bold mb-4">🛒 Lista de Compras</h2>
+        <<h2 class="text-2xl font-bold mb-4">🛒 Lista de Compras</h2>
         
         ${insumosFaltando.length > 0 ? `
           <div class="bg-yellow-50 border border-yellow-200 p-4 rounded-lg mb-4">
             <p class="font-bold text-yellow-800">⚠️ ${insumosFaltando.length} insumos precisam ser comprados!</p>
           </div>
+          </div>
 
           <div class="space-y-3">
             ${insumosFaltando.map(i => `
-              <div class="border rounded-lg p-4 bg-white">
+              <div class="border rounded-lg p-4 bg-white" id="item-compra-${i.id}">
                 <div class="flex items-start gap-3">
-                  <input type="checkbox" data-insumo-check="${i.id}" class="mt-1 w-5 h-5">
-                  <div class="flex-1">
+                  <input type="checkbox" data-insumo-check="${i.id}" class="mt-1 w-5 h-5 cursor-pointer">
+                  <div class="flex-1 item-content">
                     <div class="flex justify-between items-start mb-2">
                       <div>
                         <h3 class="font-bold text-lg">${i.nome}</h3>
@@ -886,7 +1723,7 @@
           </div>
         ` : `
           <div class="text-center py-12">
-            <div class="text-6xl mb-4">✅</div>
+             <div class="text-6xl mb-4">✅</div>
             <p class="text-xl font-bold text-green-600">Estoque em dia!</p>
             <p class="text-gray-600 mt-2">Todos os insumos estão acima do estoque mínimo</p>
           </div>
@@ -1000,15 +1837,16 @@
           </div>
         `;
       } else if (state.modalType === 'producao') {
-        const tipoProducao = state.editingId || 'final';
+        const tipoProducao = state.modalTipo || 'final';
         const ehIntermediario = tipoProducao === 'intermediario';
         
         modalContent = `
-          <h3 class="text-xl font-bold mb-4">${ehIntermediario ? '🧪 Produzir Intermediário' : '🍧 Produzir Produto Final'}</h3>
+          <h3 class="text-xl font-bold mb-4">${ehIntermediario ? '🧪 Produzir Intermediário' : '📦 Produzir Produto Final'}</h3>
           <div class="space-y-3">
             ${ehIntermediario ? `
               <div class="bg-purple-50 p-3 rounded border border-purple-200">
-                <p class="text-sm text-purple-800">💡 Produtos intermediários podem ser transferidos para insumos depois</p>
+                <p class="text-sm text-purple-800">💡 Produtos intermediários NÃO têm preço de venda</p>
+                <p class="text-sm text-purple-800">💡 Eles viram insumos depois</p>
               </div>
             ` : ''}
             <div>
@@ -1023,9 +1861,19 @@
               <input type="number" step="0.01" id="lotes" class="w-full border rounded px-3 py-2" value="1">
             </div>
             <div>
-              <label class="block text-sm mb-1">Rendimento (unidades)</label>
-              <input type="number" step="1" id="rendimento" class="w-full border rounded px-3 py-2" placeholder="Ex: 12, 13...">
+              <label class="block text-sm mb-1">${ehIntermediario ? 'Quantidade Produzida' : 'Rendimento (unidades)'}</label>
+              <input type="number" step="${ehIntermediario ? '0.01' : '1'}" id="rendimento" class="w-full border rounded px-3 py-2" placeholder="${ehIntermediario ? 'Ex: 1000' : 'Ex: 12'}">
             </div>
+            ${ehIntermediario ? `
+              <div>
+                <label class="block text-sm mb-1">Unidade de Medida</label>
+                <select id="unidadeIntermediario" class="w-full border rounded px-3 py-2">
+                  <option value="g">Gramas (g)</option>
+                  <option value="ml">Mililitros (ml)</option>
+                  <option value="un">Unidades (un)</option>
+                </select>
+              </div>
+            ` : ''}
             ${!ehIntermediario ? `
               <div>
                 <label class="block text-sm mb-1">Preço de Venda (R$)</label>
@@ -1060,6 +1908,36 @@
             </div>
             <div class="flex gap-2">
               <button data-action="save-entrada" class="flex-1 bg-green-500 text-white rounded py-2">Registrar</button>
+              <button data-action="close-modal" class="flex-1 bg-gray-300 rounded py-2">Cancelar</button>
+            </div>
+          </div>
+        `;
+      } else if (state.modalType === 'edit-pagamento-venda') {
+        const venda = state.vendas.find(v => v.id == state.editingId);
+        if (!venda) return '';
+        
+        modalContent = `
+          <h3 class="text-xl font-bold mb-4">Editar Forma de Pagamento</h3>
+          <div class="space-y-3">
+            <div class="bg-blue-50 p-3 rounded border border-blue-200">
+              <p class="text-sm text-gray-600">Venda: <span class="font-medium">R$ ${venda.valorFinal.toFixed(2)}</span></p>
+              <p class="text-sm text-gray-600">Pagamento atual: <span class="font-medium capitalize">${venda.formaPagamento}</span></p>
+            </div>
+            <div>
+              <label class="block text-sm mb-1">Nova Forma de Pagamento</label>
+              <select id="novaFormaPagamento" class="w-full border rounded px-3 py-2">
+                <option value="dinheiro" ${venda.formaPagamento === 'dinheiro' ? 'selected' : ''}>Dinheiro</option>
+                <option value="pix" ${venda.formaPagamento === 'pix' ? 'selected' : ''}>Pix</option>
+                <option value="cartao" ${venda.formaPagamento === 'cartao' ? 'selected' : ''}>Cartão</option>
+                <option value="fiado" ${venda.formaPagamento === 'fiado' ? 'selected' : ''}>Fiado</option>
+              </select>
+            </div>
+            <div class="bg-yellow-50 p-3 rounded border border-yellow-200">
+              <p class="text-xs text-yellow-800">⚠️ Alterar para "Fiado" aumentará a dívida do cliente</p>
+              <p class="text-xs text-yellow-800">⚠️ Alterar de "Fiado" para pago reduzirá a dívida</p>
+            </div>
+            <div class="flex gap-2">
+              <button data-action="save-edit-pagamento-venda" class="flex-1 bg-blue-500 text-white rounded py-2">Salvar</button>
               <button data-action="close-modal" class="flex-1 bg-gray-300 rounded py-2">Cancelar</button>
             </div>
           </div>
@@ -1103,6 +1981,155 @@
             </div>
             <div class="flex gap-2">
               <button data-action="save-venda" class="flex-1 bg-green-500 text-white rounded py-2">Finalizar</button>
+              <button data-action="close-modal" class="flex-1 bg-gray-300 rounded py-2">Cancelar</button>
+            </div>
+          </div>
+        `;
+
+      } else if (state.modalType === 'abrir-caixa') {
+        modalContent = `
+          <h3 class="text-xl font-bold mb-4">Abrir Caixa</h3>
+          <div class="space-y-3">
+            <div>
+              <label class="block text-sm font-medium mb-1">Saldo Inicial (R$)</label>
+              <input type="number" step="0.01" id="saldoInicial" class="w-full border rounded px-3 py-2" value="0">
+            </div>
+            <div class="flex gap-2">
+              <button data-action="save-abrir-caixa" class="flex-1 bg-green-500 text-white rounded py-2">Abrir</button>
+              <button data-action="close-modal" class="flex-1 bg-gray-300 rounded py-2">Cancelar</button>
+            </div>
+          </div>
+        `;
+      } else if (state.modalType === 'fechar-caixa') {
+        const movHoje = state.movimentacoes.filter(m => new Date(m.data).toDateString() === new Date().toDateString());
+        const entradas = movHoje.filter(m => m.tipo === 'entrada').reduce((t, m) => t + m.valor, 0);
+        const saidas = movHoje.filter(m => m.tipo === 'saida').reduce((t, m) => t + m.valor, 0);
+        const saldoCalculado = state.caixaAtual.saldoInicial + entradas - saidas;
+        
+        modalContent = `
+          <h3 class="text-xl font-bold mb-4">Fechar Caixa</h3>
+          <div class="space-y-3">
+            <div class="bg-gray-50 p-3 rounded">
+              <p class="text-sm text-gray-600">Saldo Inicial: <span class="font-medium">R$ ${state.caixaAtual.saldoInicial.toFixed(2)}</span></p>
+              <p class="text-sm text-green-600">Entradas: <span class="font-medium">R$ ${entradas.toFixed(2)}</span></p>
+              <p class="text-sm text-red-600">Saídas: <span class="font-medium">R$ ${saidas.toFixed(2)}</span></p>
+              <p class="text-lg font-bold text-purple-600 mt-2">Saldo Calculado: R$ ${saldoCalculado.toFixed(2)}</p>
+            </div>
+            <div>
+              <label class="block text-sm font-medium mb-1">Saldo Real Contado (R$)</label>
+              <input type="number" step="0.01" id="saldoReal" class="w-full border rounded px-3 py-2" value="${saldoCalculado.toFixed(2)}">
+            </div>
+            <div id="diferenca-caixa"></div>
+            <div class="flex gap-2">
+              <button data-action="save-fechar-caixa" class="flex-1 bg-red-500 text-white rounded py-2">Fechar Caixa</button>
+              <button data-action="close-modal" class="flex-1 bg-gray-300 rounded py-2">Cancelar</button>
+            </div>
+          </div>
+        `;
+      } else if (state.modalType === 'sangria') {
+        modalContent = `
+          <h3 class="text-xl font-bold mb-4">Sangria</h3>
+          <div class="space-y-3">
+            <div>
+              <label class="block text-sm font-medium mb-1">Valor (R$)</label>
+              <input type="number" step="0.01" id="valorSangria" class="w-full border rounded px-3 py-2">
+            </div>
+            <div>
+              <label class="block text-sm font-medium mb-1">Motivo</label>
+              <input type="text" id="motivoSangria" class="w-full border rounded px-3 py-2" placeholder="Ex: Depósito bancário">
+            </div>
+            <div class="flex gap-2">
+              <button data-action="save-sangria" class="flex-1 bg-orange-500 text-white rounded py-2">Registrar</button>
+              <button data-action="close-modal" class="flex-1 bg-gray-300 rounded py-2">Cancelar</button>
+            </div>
+          </div>
+        `;
+      } else if (state.modalType === 'reforco') {
+        modalContent = `
+          <h3 class="text-xl font-bold mb-4">Reforço de Caixa</h3>
+          <div class="space-y-3">
+            <div>
+              <label class="block text-sm font-medium mb-1">Valor (R$)</label>
+              <input type="number" step="0.01" id="valorReforco" class="w-full border rounded px-3 py-2">
+            </div>
+            <div>
+              <label class="block text-sm font-medium mb-1">Motivo</label>
+              <input type="text" id="motivoReforco" class="w-full border rounded px-3 py-2" placeholder="Ex: Troco">
+            </div>
+            <div class="flex gap-2">
+              <button data-action="save-reforco" class="flex-1 bg-blue-500 text-white rounded py-2">Registrar</button>
+              <button data-action="close-modal" class="flex-1 bg-gray-300 rounded py-2">Cancelar</button>
+            </div>
+          </div>
+        `;
+      } else if (state.modalType === 'despesa') {
+        modalContent = `
+          <h3 class="text-xl font-bold mb-4">Despesa</h3>
+          <div class="space-y-3">
+            <div>
+              <label class="block text-sm font-medium mb-1">Valor (R$)</label>
+              <input type="number" step="0.01" id="valorDespesa" class="w-full border rounded px-3 py-2">
+            </div>
+            <div>
+              <label class="block text-sm font-medium mb-1">Descrição</label>
+              <input type="text" id="descricaoDespesa" class="w-full border rounded px-3 py-2" placeholder="Ex: Conta de luz">
+            </div>
+            <div>
+              <label class="block text-sm font-medium mb-1">Categoria</label>
+              <select id="categoriaDespesa" class="w-full border rounded px-3 py-2">
+                <option value="operacional">Operacional</option>
+                <option value="compras">Compras</option>
+                <option value="pessoal">Pessoal</option>
+                <option value="outros">Outros</option>
+              </select>
+            </div>
+            <div class="flex gap-2">
+              <button data-action="save-despesa-caixa" class="flex-1 bg-red-500 text-white rounded py-2">Registrar</button>
+              <button data-action="close-modal" class="flex-1 bg-gray-300 rounded py-2">Cancelar</button>
+            </div>
+          </div>
+        `;
+      } else if (state.modalType === 'nova-despesa-recorrente') {
+        modalContent = `
+          <h3 class="text-xl font-bold mb-4">Nova Despesa Recorrente</h3>
+          <div class="space-y-3">
+            <div>
+              <label class="block text-sm font-medium mb-1">Nome</label>
+              <input type="text" id="nomeDespesaRec" class="w-full border rounded px-3 py-2" placeholder="Ex: Aluguel, Luz">
+            </div>
+            <div>
+              <label class="block text-sm font-medium mb-1">Valor (R$)</label>
+              <input type="number" step="0.01" id="valorDespesaRec" class="w-full border rounded px-3 py-2">
+              <p class="text-xs text-gray-500 mt-1">💡 Digite o valor mensal/da parcela</p>
+            </div>
+            <div>
+              <label class="block text-sm font-medium mb-1">Tipo</label>
+              <select id="tipoDespesaRec" class="w-full border rounded px-3 py-2">
+                <option value="mensal">Mensal (todo mês)</option>
+                <option value="parcelado">Parcelado</option>
+              </select>
+            </div>
+            <div id="parcelas-div" style="display:none">
+              <label class="block text-sm font-medium mb-1">Número de Parcelas</label>
+              <input type="number" id="totalParcelas" class="w-full border rounded px-3 py-2" value="12">
+            </div>
+            <div>
+              <label class="block text-sm font-medium mb-1">Dia do Vencimento</label>
+              <input type="number" min="1" max="31" id="diaVencimento" class="w-full border rounded px-3 py-2" value="10">
+            </div>
+            <div>
+              <label class="block text-sm font-medium mb-1">Categoria</label>
+              <select id="categoriaDespesaRec" class="w-full border rounded px-3 py-2">
+                <option value="operacional">Operacional</option>
+                <option value="aluguel">Aluguel</option>
+                <option value="contas">Contas (luz, água, etc)</option>
+                <option value="pessoal">Pessoal</option>
+                <option value="financiamento">Financiamento</option>
+                <option value="outros">Outros</option>
+              </select>
+            </div>
+            <div class="flex gap-2">
+              <button data-action="save-despesa-rec" class="flex-1 bg-blue-500 text-white rounded py-2">Salvar</button>
               <button data-action="close-modal" class="flex-1 bg-gray-300 rounded py-2">Cancelar</button>
             </div>
           </div>
@@ -1175,6 +2202,7 @@
       document.querySelectorAll('[data-action="modal"]').forEach(btn => {
         btn.addEventListener('click', (e) => {
           state.modalType = e.currentTarget.dataset.modal;
+          state.modalTipo = e.currentTarget.dataset.tipo || null; // Salva o tipo (intermediario/final)
           state.editingId = null;
           state.showModal = true;
           render();
@@ -1355,7 +2383,8 @@
           const cliente = state.clientes.find(c => c.id == state.editingId);
           if (!cliente) return alert('Cliente não encontrado');
           
-          cliente.saldo += valorPago;
+          // Saldo negativo + pagamento = reduz dívida (ex: -8 + 5 = -3)
+          cliente.saldo = cliente.saldo + valorPago;
           await saveToFirebase('clientes', cliente.id, cliente);
           
           const mov = {
@@ -1617,6 +2646,132 @@
         });
       });
 
+      // Logout
+      document.querySelectorAll('[data-action="logout"]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          if (confirm('Deseja realmente sair?')) {
+            try {
+              // Deslogar do Firebase (v9 syntax)
+              await signOut(auth);
+              
+              // Limpar TUDO do state
+              state.user = null;
+              state.showLoginScreen = true;
+              state.activeTab = 'dashboard';
+              state.insumos = [];
+              state.receitas = [];
+              state.produtos = [];
+              state.clientes = [];
+              state.vendas = [];
+              state.movimentacoes = [];
+              state.caixas = [];
+              state.caixaAtual = null;
+              state.despesasRecorrentes = [];
+              state.showModal = false;
+              state.modalType = '';
+              state.editingId = null;
+              state.loading = false;
+              
+              // Renderizar tela de login
+              render();
+              
+              console.log('✅ Logout realizado com sucesso');
+            } catch (error) {
+              console.error('Erro ao fazer logout:', error);
+              alert('Erro ao sair. Tente novamente.');
+            }
+          }
+        });
+      });
+
+
+      // Editar forma de pagamento da venda
+      document.querySelectorAll('[data-action="edit-pagamento-venda"]').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          state.editingId = e.currentTarget.dataset.id;
+          state.modalType = 'edit-pagamento-venda';
+          state.showModal = true;
+          render();
+        });
+      });
+      
+      // Salvar edição de forma de pagamento
+      document.querySelectorAll('[data-action="save-edit-pagamento-venda"]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const venda = state.vendas.find(v => v.id == state.editingId);
+          if (!venda) return alert('Venda não encontrada');
+          
+          const novaForma = document.getElementById('novaFormaPagamento')?.value;
+          if (!novaForma) return alert('Selecione a forma de pagamento');
+          
+          const formaAnterior = venda.formaPagamento;
+          
+          // Se está mudando de/para fiado, precisa ajustar saldo do cliente
+          const cliente = state.clientes.find(c => c.id == venda.clienteId);
+          if (cliente) {
+            // Se estava fiado e agora vai ser pago: reduz dívida (adiciona ao saldo)
+            if (formaAnterior === 'fiado' && novaForma !== 'fiado') {
+              cliente.saldo += venda.valorFinal;
+              await saveToFirebase('clientes', cliente.id, cliente);
+            }
+            // Se não estava fiado e agora vai ser: aumenta dívida (reduz do saldo)
+            else if (formaAnterior !== 'fiado' && novaForma === 'fiado') {
+              cliente.saldo -= venda.valorFinal;
+              await saveToFirebase('clientes', cliente.id, cliente);
+            }
+          }
+          
+          // Atualizar venda
+          venda.formaPagamento = novaForma;
+          await saveToFirebase('vendas', venda.id, venda);
+          
+          state.showModal = false;
+          state.editingId = null;
+          render();
+        });
+      });
+      
+      // Deletar venda
+      document.querySelectorAll('[data-action="delete-venda"]').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          if (!confirm('⚠️ ATENÇÃO: Deletar venda irá DEVOLVER os produtos ao estoque e ajustar o saldo do cliente. Confirma?')) return;
+          
+          const id = e.currentTarget.dataset.id;
+          const venda = state.vendas.find(v => v.id == id);
+          if (!venda) return alert('Venda não encontrada');
+          
+          // 1. Devolver produtos ao estoque
+          for (let item of venda.itens) {
+            const produto = state.produtos.find(p => p.id == item.produtoId);
+            if (produto) {
+              produto.quantidade += item.quantidade;
+              await saveToFirebase('produtos', produto.id, produto);
+            }
+          }
+          
+          // 2. Ajustar saldo do cliente
+          const cliente = state.clientes.find(c => c.id == venda.clienteId);
+          if (cliente) {
+            // Se estava fiado: reduz dívida (adiciona ao saldo)
+            if (venda.formaPagamento === 'fiado') {
+              cliente.saldo += venda.valorFinal;
+            }
+            // Se usou crédito: devolve crédito
+            if (venda.creditoUsado > 0) {
+              cliente.saldo += venda.creditoUsado;
+            }
+            await saveToFirebase('clientes', cliente.id, cliente);
+          }
+          
+          // 3. Deletar venda
+          await deleteFromFirebase('vendas', id);
+          state.vendas = state.vendas.filter(v => v.id != id);
+          
+          alert('✅ Venda deletada! Estoque e saldo ajustados.');
+          render();
+        });
+      });
+
       // Busca de clientes
       const searchCliente = document.getElementById('search-cliente');
       if (searchCliente) {
@@ -1848,17 +3003,232 @@
       }
     }
 
+
+
+      // ===== FLUXO DE CAIXA =====
+      document.querySelectorAll('[data-action="save-abrir-caixa"]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const saldoInicial = parseFloat(document.getElementById('saldoInicial').value) || 0;
+          
+          const novoCaixa = {
+            id: Date.now(),
+            dataAbertura: new Date().toISOString(),
+            saldoInicial,
+            saldoFinal: 0,
+            status: 'aberto'
+          };
+          
+          await saveToFirebase('caixas', novoCaixa.id, novoCaixa);
+          state.caixas.push(novoCaixa);
+          state.caixaAtual = novoCaixa;
+          
+          state.showModal = false;
+          render();
+        });
+      });
+
+      document.querySelectorAll('[data-action="save-sangria"]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const valor = parseFloat(document.getElementById('valorSangria').value);
+          const motivo = document.getElementById('motivoSangria').value;
+          
+          if (!valor || !motivo) return alert('Preencha todos os campos');
+          
+          const mov = {
+            id: Date.now(),
+            tipo: 'saida',
+            categoria: 'sangria',
+            data: new Date().toISOString(),
+            descricao: `Sangria: ${motivo}`,
+            valor
+          };
+          
+          await saveToFirebase('movimentacoes', mov.id, mov);
+          state.movimentacoes.push(mov);
+          
+          state.showModal = false;
+          render();
+        });
+      });
+
+      document.querySelectorAll('[data-action="save-reforco"]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const valor = parseFloat(document.getElementById('valorReforco').value);
+          const motivo = document.getElementById('motivoReforco').value;
+          
+          if (!valor || !motivo) return alert('Preencha todos os campos');
+          
+          const mov = {
+            id: Date.now(),
+            tipo: 'entrada',
+            categoria: 'reforco',
+            data: new Date().toISOString(),
+            descricao: `Reforço: ${motivo}`,
+            valor
+          };
+          
+          await saveToFirebase('movimentacoes', mov.id, mov);
+          state.movimentacoes.push(mov);
+          
+          state.showModal = false;
+          render();
+        });
+      });
+
+      document.querySelectorAll('[data-action="save-despesa"]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const valor = parseFloat(document.getElementById('valorDespesa').value);
+          const descricao = document.getElementById('descricaoDespesa').value;
+          const categoria = document.getElementById('categoriaDespesa').value;
+          
+          if (!valor || !descricao) return alert('Preencha todos os campos');
+          
+          const mov = {
+            id: Date.now(),
+            tipo: 'saida',
+            categoria,
+            data: new Date().toISOString(),
+            descricao,
+            valor
+          };
+          
+          await saveToFirebase('movimentacoes', mov.id, mov);
+          state.movimentacoes.push(mov);
+          
+          state.showModal = false;
+          render();
+        });
+      });
+
+      // Calcular diferença no fechamento de caixa
+      const saldoRealInput = document.getElementById('saldoReal');
+      if (saldoRealInput && state.modalType === 'fechar-caixa') {
+        saldoRealInput.addEventListener('input', () => {
+          const movHoje = state.movimentacoes.filter(m => new Date(m.data).toDateString() === new Date().toDateString());
+          const entradas = movHoje.filter(m => m.tipo === 'entrada').reduce((t, m) => t + m.valor, 0);
+          const saidas = movHoje.filter(m => m.tipo === 'saida').reduce((t, m) => t + m.valor, 0);
+          const saldoCalculado = state.caixaAtual.saldoInicial + entradas - saidas;
+          const saldoReal = parseFloat(saldoRealInput.value) || 0;
+          const diferenca = saldoReal - saldoCalculado;
+          
+          const diferencaDiv = document.getElementById('diferenca-caixa');
+          if (diferencaDiv && diferenca !== 0) {
+            diferencaDiv.innerHTML = `
+              <div class="p-3 rounded ${diferenca > 0 ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}">
+                <p class="text-sm font-medium ${diferenca > 0 ? 'text-green-700' : 'text-red-700'}">
+                  ${diferenca > 0 ? 'Sobra' : 'Falta'}: R$ ${Math.abs(diferenca).toFixed(2)}
+                </p>
+              </div>
+            `;
+          } else if (diferencaDiv) {
+            diferencaDiv.innerHTML = '';
+          }
+        });
+      }
+
+
+      // ===== DESPESAS RECORRENTES =====
+      
+      // Toggle parcelas no modal
+      const tipoDespSelect = document.getElementById('tipoDespesaRec');
+      if (tipoDespSelect) {
+        tipoDespSelect.addEventListener('change', () => {
+          const parcelasDiv = document.getElementById('parcelas-div');
+          if (parcelasDiv) {
+            parcelasDiv.style.display = tipoDespSelect.value === 'parcelado' ? 'block' : 'none';
+          }
+        });
+      }
+      
+      // Salvar despesa
+      document.querySelectorAll('[data-action="save-despesa-rec"]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const nome = document.getElementById('nomeDespesaRec')?.value;
+          const valor = parseFloat(document.getElementById('valorDespesaRec')?.value);
+          const tipo = document.getElementById('tipoDespesaRec')?.value;
+          const diaVencimento = parseInt(document.getElementById('diaVencimento')?.value);
+          const categoria = document.getElementById('categoriaDespesaRec')?.value;
+          
+          if (!nome || !valor || !diaVencimento) {
+            return alert('Preencha todos os campos');
+          }
+          
+          const novaDespesa = {
+            id: Date.now(),
+            nome,
+            valor,
+            tipo,
+            diaVencimento,
+            categoria,
+            dataInicio: new Date().toISOString()
+          };
+          
+          if (tipo === 'parcelado') {
+            novaDespesa.totalParcelas = parseInt(document.getElementById('totalParcelas')?.value) || 12;
+          }
+          
+          await saveToFirebase('despesasRecorrentes', novaDespesa.id, novaDespesa);
+          state.despesasRecorrentes.push(novaDespesa);
+          
+          state.showModal = false;
+          render();
+        });
+      });
+      
+      // Pagar despesa
+      document.querySelectorAll('[data-action="pagar-despesa-rec"]').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          const id = e.currentTarget.dataset.id;
+          const valor = parseFloat(e.currentTarget.dataset.valor);
+          const nome = e.currentTarget.dataset.nome;
+          
+          if (confirm(`Registrar pagamento de ${nome} - R$ ${valor.toFixed(2)}?`)) {
+            const hoje = new Date();
+            const mesAnoKey = `${hoje.getMonth()}-${hoje.getFullYear()}`;
+            
+            const mov = {
+              id: Date.now(),
+              tipo: 'saida',
+              categoria: 'despesa-recorrente',
+              despesaRecorrenteId: parseInt(id),
+              mesAno: mesAnoKey,
+              data: new Date().toISOString(),
+              descricao: `Pagamento: ${nome}`,
+              valor
+            };
+            
+            await saveToFirebase('movimentacoes', mov.id, mov);
+            state.movimentacoes.push(mov);
+            
+            alert('✅ Pagamento registrado!');
+            render();
+          }
+        });
+      });
+      
+      // Deletar despesa
+      document.querySelectorAll('[data-action="delete-despesa-rec"]').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          if (confirm('Tem certeza que deseja excluir?')) {
+            const id = e.currentTarget.dataset.id;
+            await deleteFromFirebase('despesasRecorrentes', id);
+            state.despesasRecorrentes = state.despesasRecorrentes.filter(d => d.id != id);
+            render();
+          }
+        });
+      });
     loadAllData();
   </script>
+
   <script>
-  if ("serviceWorker" in navigator) {
-    window.addEventListener("load", function () {
-      navigator.serviceWorker
-        .register("/sw.js")
-        .then((reg) => console.log("SW registrado:", reg))
-        .catch((err) => console.log("Falha no SW:", err));
-    });
-  }
-</script>
+    // Registrar Service Worker para PWA
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/service-worker.js')
+          .then(reg => console.log('✅ Service Worker registrado'))
+          .catch(err => console.log('❌ Erro no Service Worker:', err));
+      });
+    }
+  </script>
 </body>
 </html>

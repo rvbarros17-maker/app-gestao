@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Totaliz - Gestão Inteligente de Produção | Sistema Completo</title>
+  <meta name="description" content="Sistema completo de gestão para negócios de produção. Controle estoque, vendas, clientes, lucro e muito mais em um só lugar.">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @keyframes float {
+      0%, 100% { transform: translateY(0px); }
+      50% { transform: translateY(-20px); }
+    }
+    .float-animation {
+      animation: float 3s ease-in-out infinite;
+    }
+    html {
+      scroll-behavior: smooth;
+    }
+  </style>
+</head>
+<body class="bg-white">
+
+  <!-- Navigation -->
+  <nav class="bg-white shadow-md fixed w-full top-0 z-50">
+    <div class="max-w-7xl mx-auto px-4 py-4">
+      <div class="flex justify-between items-center">
+        <div class="flex items-center gap-3">
+          <img src="icon-192.png" alt="Totaliz" class="w-12 h-12 rounded-lg shadow-lg">
+          <span class="text-2xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">Totaliz</span>
+        </div>
+        <div class="hidden md:flex gap-8 items-center">
+          <a href="#funcionalidades" class="text-gray-700 hover:text-purple-600 transition font-medium">Funcionalidades</a>
+          <a href="#precos" class="text-gray-700 hover:text-purple-600 transition font-medium">Preços</a>
+          <a href="#depoimentos" class="text-gray-700 hover:text-purple-600 transition font-medium">Depoimentos</a>
+          <a href="#contato" class="text-gray-700 hover:text-purple-600 transition font-medium">Contato</a>
+          <a href="#precos" class="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-6 py-2 rounded-lg font-semibold hover:shadow-lg transition">
+            Começar Agora
+          </a>
+        </div>
+        <!-- Mobile menu button -->
+        <button class="md:hidden">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Hero Section -->
+  <section class="pt-32 pb-20 bg-gradient-to-br from-purple-50 via-pink-50 to-orange-50">
+    <div class="max-w-7xl mx-auto px-4">
+      <div class="grid md:grid-cols-2 gap-12 items-center">
+        <div>
+          <div class="inline-block bg-purple-100 text-purple-700 px-4 py-2 rounded-full text-sm font-semibold mb-6">
+            ✨ Sistema de Gestão Completo
+          </div>
+          <h1 class="text-5xl md:text-6xl font-bold mb-6 leading-tight">
+            Controle <span class="bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">Total</span> do Seu Negócio
+          </h1>
+          <p class="text-xl text-gray-600 mb-8">
+            Gerencie clientes, estoque, vendas e lucro em um só lugar. 
+            Simples, poderoso e feito para empreendedores.
+          </p>
+          <div class="flex flex-col sm:flex-row gap-4 mb-8">
+            <a href="#precos" class="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-8 py-4 rounded-xl text-lg font-semibold hover:shadow-xl transition transform hover:scale-105 text-center">
+              🚀 Começar Grátis por 7 Dias
+            </a>
+            <a href="#demo" class="bg-white text-gray-700 px-8 py-4 rounded-xl text-lg font-semibold border-2 border-gray-200 hover:border-purple-600 hover:text-purple-600 transition text-center">
+              📱 Ver Demo
+            </a>
+          </div>
+          <div class="flex flex-wrap gap-6 text-sm text-gray-600">
+            <div class="flex items-center gap-2">
+              <svg class="w-5 h-5 text-green-500" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"/>
+              </svg>
+              <span>Sem cartão de crédito</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <svg class="w-5 h-5 text-green-500" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"/>
+              </svg>
+              <span>Cancelamento fácil</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <svg class="w-5 h-5 text-green-500" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"/>
+              </svg>
+              <span>500+ clientes</span>
+            </div>
+          </div>
+        </div>
+        <div class="relative">
+          <div class="float-animation">
+            <img src="icon-512.png" alt="Totaliz App" class="w-full max-w-lg mx-auto drop-shadow-2xl rounded-3xl">
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Social Proof -->
+  <section class="py-12 bg-white border-y border-gray-200">
+    <div class="max-w-7xl mx-auto px-4">
+      <p class="text-center text-gray-600 mb-8">Confiado por empreendedores em todo Brasil</p>
+      <div class="flex flex-wrap justify-center items-center gap-12">
+        <div class="text-center">
+          <div class="text-4xl font-bold text-purple-600">500+</div>
+          <div class="text-sm text-gray-600">Clientes Ativos</div>
+        </div>
+        <div class="text-center">
+          <div class="text-4xl font-bold text-pink-600">4.9⭐</div>
+          <div class="text-sm text-gray-600">Avaliação Média</div>
+        </div>
+        <div class="text-center">
+          <div class="text-4xl font-bold text-orange-600">10k+</div>
+          <div class="text-sm text-gray-600">Vendas Registradas</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Problemas -->
+  <section class="py-20 bg-gray-50">
+    <div class="max-w-7xl mx-auto px-4">
+      <div class="text-center mb-16">
+        <h2 class="text-4xl font-bold mb-4">Você está perdendo dinheiro?</h2>
+        <p class="text-xl text-gray-600">Esses problemas te impedem de crescer</p>
+      </div>
+      
+      <div class="grid md:grid-cols-4 gap-6 mb-12">
+        <div class="bg-red-50 border-2 border-red-200 rounded-xl p-6">
+          <div class="text-4xl mb-3">😰</div>
+          <h3 class="font-bold mb-2">Sem controle de lucro</h3>
+          <p class="text-sm text-gray-700">Não sabe quanto lucra de verdade</p>
+        </div>
+        <div class="bg-red-50 border-2 border-red-200 rounded-xl p-6">
+          <div class="text-4xl mb-3">⏰</div>
+          <h3 class="font-bold mb-2">Perde muito tempo</h3>
+          <p class="text-sm text-gray-700">Horas no caderninho ou planilha</p>
+        </div>
+        <div class="bg-red-50 border-2 border-red-200 rounded-xl p-6">
+          <div class="text-4xl mb-3">💸</div>
+          <h3 class="font-bold mb-2">Fiados descontrolados</h3>
+          <p class="text-sm text-gray-700">Esquece de cobrar e perde dinheiro</p>
+        </div>
+        <div class="bg-red-50 border-2 border-red-200 rounded-xl p-6">
+          <div class="text-4xl mb-3">📦</div>
+          <h3 class="font-bold mb-2">Falta ingrediente</h3>
+          <p class="text-sm text-gray-700">Sempre esquece de comprar algo</p>
+        </div>
+      </div>
+
+      <div class="bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-2xl p-12 text-center">
+        <h3 class="text-3xl font-bold mb-4">✅ Com o Totaliz, você tem controle TOTAL</h3>
+        <p class="text-xl opacity-90">Gestão profissional na palma da sua mão</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Funcionalidades -->
+  <section id="funcionalidades" class="py-20 bg-white">
+    <div class="max-w-7xl mx-auto px-4">
+      <div class="text-center mb-16">
+        <h2 class="text-4xl font-bold mb-4">Tudo que você precisa em um só lugar</h2>
+        <p class="text-xl text-gray-600">Sistema completo de gestão</p>
+      </div>
+
+      <div class="grid md:grid-cols-3 gap-8">
+        <!-- Feature cards... (usando os mesmos cards da primeira versão) -->
+        <div class="bg-white border-2 border-gray-100 rounded-xl p-8 hover:border-purple-300 hover:shadow-xl transition">
+          <div class="w-16 h-16 bg-gradient-to-br from-purple-500 to-pink-500 rounded-2xl flex items-center justify-center text-3xl mb-6">
+            👥
+          </div>
+          <h3 class="text-2xl font-bold mb-4">Gestão de Clientes</h3>
+          <p class="text-gray-600 mb-6">Cadastro completo com controle de créditos, fiados e histórico.</p>
+          <ul class="space-y-2 text-sm">
+            <li class="flex items-start gap-2">
+              <span class="text-green-500 font-bold text-lg">✓</span>
+              <span>Cadastro ilimitado</span>
+            </li>
+            <li class="flex items-start gap-2">
+              <span class="text-green-500 font-bold text-lg">✓</span>
+              <span>Controle de crédito/dívidas</span>
+            </li>
+            <li class="flex items-start gap-2">
+              <span class="text-green-500 font-bold text-lg">✓</span>
+              <span>Histórico completo</span>
+            </li>
+          </ul>
+        </div>
+
+        <div class="bg-white border-2 border-gray-100 rounded-xl p-8 hover:border-purple-300 hover:shadow-xl transition">
+          <div class="w-16 h-16 bg-gradient-to-br from-orange-500 to-red-500 rounded-2xl flex items-center justify-center text-3xl mb-6">
+            📦
+          </div>
+          <h3 class="text-2xl font-bold mb-4">Controle de Estoque</h3>
+          <p class="text-gray-600 mb-6">Nunca mais fique sem ingredientes. Lista automática!</p>
+          <ul class="space-y-2 text-sm">
+            <li class="flex items-start gap-2">
+              <span class="text-green-500 font-bold text-lg">✓</span>
+              <span>Entrada/saída automática</span>
+            </li>
+            <li class="flex items-start gap-2">
+              <span class="text-green-500 font-bold text-lg">✓</span>
+              <span>Alerta de estoque mínimo</span>
+            </li>
+            <li class="flex items-start gap-2">
+              <span class="text-green-500 font-bold text-lg">✓</span>
+              <span>Lista de compras automática</span>
+            </li>
+          </ul>
+        </div>
+
+        <div class="bg-white border-2 border-gray-100 rounded-xl p-8 hover:border-purple-300 hover:shadow-xl transition">
+          <div class="w-16 h-16 bg-gradient-to-br from-green-500 to-teal-500 rounded-2xl flex items-center justify-center text-3xl mb-6">
+            💰
+          </div>
+          <h3 class="text-2xl font-bold mb-4">Cálculo de Lucro</h3>
+          <p class="text-gray-600 mb-6">Saiba exatamente quanto você lucra em cada produto.</p>
+          <ul class="space-y-2 text-sm">
+            <li class="flex items-start gap-2">
+              <span class="text-green-500 font-bold text-lg">✓</span>
+              <span>Custo automático</span>
+            </li>
+            <li class="flex items-start gap-2">
+              <span class="text-green-500 font-bold text-lg">✓</span>
+              <span>Margem de lucro</span>
+            </li>
+            <li class="flex items-start gap-2">
+              <span class="text-green-500 font-bold text-lg">✓</span>
+              <span>Relatórios de rentabilidade</span>
+            </li>
+          </ul>
+        </div>
+
+        <!-- Mais 3 cards... -->
+        <div class="bg-white border-2 border-gray-100 rounded-xl p-8 hover:border-purple-300 hover:shadow-xl transition">
+          <div class="w-16 h-16 bg-gradient-to-br from-blue-500 to-indigo-500 rounded-2xl flex items-center justify-center text-3xl mb-6">
+            🛒
+          </div>
+          <h3 class="text-2xl font-bold mb-4">Sistema de Vendas</h3>
+          <p class="text-gray-600 mb-6">Registre vendas com múltiplas formas de pagamento.</p>
+          <ul class="space-y-2 text-sm">
+            <li class="flex items-start gap-2">
+              <span class="text-green-500 font-bold text-lg">✓</span>
+              <span>Dinheiro, Pix, Cartão, Fiado</span>
+            </li>
+            <li class="flex items-start gap-2">
+              <span class="text-green-500 font-bold text-lg">✓</span>
+              <span>Uso de crédito do cliente</span>
+            </li>
+            <li class="flex items-start gap-2">
+              <span class="text-green-500 font-bold text-lg">✓</span>
+              <span>Baixa automática de estoque</span>
+            </li>
+          </ul>
+        </div>
+
+        <div class="bg-white border-2 border-gray-100 rounded-xl p-8 hover:border-purple-300 hover:shadow-xl transition">
+          <div class="w-16 h-16 bg-gradient-to-br from-yellow-500 to-orange-500 rounded-2xl flex items-center justify-center text-3xl mb-6">
+            💵
+          </div>
+          <h3 class="text-2xl font-bold mb-4">Fluxo de Caixa</h3>
+          <p class="text-gray-600 mb-6">Controle total de entradas e saídas diárias.</p>
+          <ul class="space-y-2 text-sm">
+            <li class="flex items-start gap-2">
+              <span class="text-green-500 font-bold text-lg">✓</span>
+              <span>Abertura/fechamento</span>
+            </li>
+            <li class="flex items-start gap-2">
+              <span class="text-green-500 font-bold text-lg">✓</span>
+              <span>Sangria e reforço</span>
+            </li>
+            <li class="flex items-start gap-2">
+              <span class="text-green-500 font-bold text-lg">✓</span>
+              <span>Controle de diferenças</span>
+            </li>
+          </ul>
+        </div>
+
+        <div class="bg-white border-2 border-gray-100 rounded-xl p-8 hover:border-purple-300 hover:shadow-xl transition">
+          <div class="w-16 h-16 bg-gradient-to-br from-red-500 to-pink-500 rounded-2xl flex items-center justify-center text-3xl mb-6">
+            📊
+          </div>
+          <h3 class="text-2xl font-bold mb-4">Relatórios</h3>
+          <p class="text-gray-600 mb-6">Decisões baseadas em dados reais.</p>
+          <ul class="space-y-2 text-sm">
+            <li class="flex items-start gap-2">
+              <span class="text-green-500 font-bold text-lg">✓</span>
+              <span>Produtos mais vendidos</span>
+            </li>
+            <li class="flex items-start gap-2">
+              <span class="text-green-500 font-bold text-lg">✓</span>
+              <span>Melhores clientes</span>
+            </li>
+            <li class="flex items-start gap-2">
+              <span class="text-green-500 font-bold text-lg">✓</span>
+              <span>Análise de rentabilidade</span>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA Preços (reduzido para economizar espaço) -->
+  <!-- Preços -->
+  <section id="precos" class="py-20 bg-white">
+    <div class="max-w-6xl mx-auto px-4">
+      <div class="text-center mb-16">
+        <h2 class="text-4xl font-bold mb-4">Escolha seu plano e comece hoje</h2>
+        <p class="text-xl text-gray-600">Cancele quando quiser • Sem compromisso</p>
+      </div>
+
+      <div class="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto">
+        
+        <!-- Plano Mensal -->
+        <div class="bg-white border-2 border-gray-200 rounded-2xl p-8 hover:shadow-xl transition">
+          <div class="mb-6">
+            <h3 class="text-2xl font-bold mb-2">Mensal</h3>
+            <p class="text-gray-600">Flexibilidade total</p>
+          </div>
+          <div class="mb-6">
+            <div class="flex items-baseline gap-2">
+              <span class="text-5xl font-bold text-gray-900">R$ 29,90</span>
+              <span class="text-gray-600">/mês</span>
+            </div>
+          </div>
+          <ul class="space-y-3 mb-8">
+            <li class="flex items-center gap-2">
+              <span class="text-green-500 font-bold">✓</span>
+              <span>Todos os recursos</span>
+            </li>
+            <li class="flex items-center gap-2">
+              <span class="text-green-500 font-bold">✓</span>
+              <span>Atualizações grátis</span>
+            </li>
+            <li class="flex items-center gap-2">
+              <span class="text-green-500 font-bold">✓</span>
+              <span>Suporte prioritário</span>
+            </li>
+            <li class="flex items-center gap-2">
+              <span class="text-green-500 font-bold">✓</span>
+              <span>Cancele quando quiser</span>
+            </li>
+          </ul>
+          <a href="#" class="block w-full bg-gradient-to-r from-gray-700 to-gray-800 text-white text-center px-8 py-4 rounded-xl font-bold hover:shadow-lg transition">
+            Começar com Mensal
+          </a>
+        </div>
+
+        <!-- Plano Anual (Destaque) -->
+        <div class="bg-gradient-to-br from-purple-600 via-pink-500 to-orange-500 text-white rounded-2xl p-8 shadow-2xl relative transform scale-105">
+          <div class="absolute -top-4 left-1/2 transform -translate-x-1/2 bg-yellow-400 text-gray-900 px-6 py-2 rounded-full font-bold text-sm">
+            🔥 ECONOMIZE 33%
+          </div>
+          <div class="mb-6">
+            <h3 class="text-2xl font-bold mb-2">Anual</h3>
+            <p class="opacity-90">2 meses grátis</p>
+          </div>
+          <div class="mb-6">
+            <div class="text-sm line-through opacity-75 mb-1">R$ 358,80</div>
+            <div class="flex items-baseline gap-2">
+              <span class="text-5xl font-bold">R$ 239,00</span>
+              <span class="opacity-90">/ano</span>
+            </div>
+            <div class="text-sm opacity-75 mt-2">R$ 19,92/mês</div>
+          </div>
+          <ul class="space-y-3 mb-8">
+            <li class="flex items-center gap-2">
+              <span class="font-bold">✓</span>
+              <span>Todos os recursos</span>
+            </li>
+            <li class="flex items-center gap-2">
+              <span class="font-bold">✓</span>
+              <span>Atualizações grátis</span>
+            </li>
+            <li class="flex items-center gap-2">
+              <span class="font-bold">✓</span>
+              <span>Suporte VIP</span>
+            </li>
+            <li class="flex items-center gap-2">
+              <span class="font-bold">✓</span>
+              <span>Economize R$ 119,80</span>
+            </li>
+          </ul>
+          <a href="#" class="block w-full bg-white text-purple-600 text-center px-8 py-4 rounded-xl font-bold hover:bg-gray-100 transition">
+            🚀 Começar com Anual
+          </a>
+        </div>
+
+      </div>
+
+      <!-- Garantia -->
+      <div class="mt-16 max-w-2xl mx-auto">
+        <div class="bg-green-50 border-2 border-green-500 p-8 rounded-2xl text-center">
+          <div class="text-6xl mb-4">🛡️</div>
+          <h3 class="text-2xl font-bold mb-4">Garantia de 7 Dias</h3>
+          <p class="text-lg text-gray-700 mb-4">
+            Teste TUDO sem compromisso. Se não gostar, devolvemos 100% do seu dinheiro.
+          </p>
+          <p class="text-sm text-gray-600">Cancele quando quiser, sem multa, sem burocracia.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA Final -->
+  <section class="py-20 bg-gradient-to-br from-purple-600 via-pink-500 to-orange-500 text-white">
+    <div class="max-w-4xl mx-auto px-4 text-center">
+      <h2 class="text-4xl md:text-5xl font-bold mb-6">
+        Pronto para transformar seu negócio?
+      </h2>
+      <p class="text-xl mb-12 opacity-90">
+        Junte-se a 500+ empreendedores que já estão lucrando mais
+      </p>
+      <a href="#precos" class="inline-block bg-white text-purple-600 px-12 py-5 rounded-xl text-xl font-bold hover:shadow-2xl transition">
+        🚀 Começar Agora - 7 Dias Grátis
+      </a>
+      <p class="mt-6 text-sm opacity-75">Sem cartão de crédito • Cancele quando quiser</p>
+    </div>
+  </section>
+
+  <!-- Footer Simples -->
+  <footer id="contato" class="bg-gray-900 text-white py-12">
+    <div class="max-w-7xl mx-auto px-4 text-center">
+      <div class="flex items-center justify-center gap-2 mb-4">
+        <img src="icon-192.png" alt="Totaliz" class="w-10 h-10 rounded-lg">
+        <span class="text-xl font-bold">Totaliz</span>
+      </div>
+      <p class="text-gray-400 mb-6">Gestão Inteligente de Produção</p>
+      <div class="flex justify-center gap-8 text-sm text-gray-400 mb-8">
+        <a href="#" class="hover:text-white">Termos de Uso</a>
+        <a href="#" class="hover:text-white">Privacidade</a>
+        <a href="#" class="hover:text-white">Contato</a>
+      </div>
+      <p class="text-sm text-gray-500">© 2026 Totaliz. Todos os direitos reservados.</p>
+    </div>
+  </footer>
+
+</body>
+</html>

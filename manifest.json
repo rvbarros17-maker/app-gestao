@@ -1,21 +1,29 @@
 {
-  "name": "App Gestão",
-  "short_name": "Gestão",
+  "name": "Totaliz - Gestão Inteligente de Produção",
+  "short_name": "Totaliz",
+  "description": "Sistema completo de gestão para produção e vendas",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#00aaff",
+  "background_color": "#6366f1",
+  "theme_color": "#6366f1",
+  "orientation": "portrait",
   "icons": [
     {
       "src": "icon-192.png",
       "sizes": "192x192",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any maskable"
     },
     {
       "src": "icon-512.png",
       "sizes": "512x512",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any maskable"
     }
-  ]
+  ],
+  "categories": [
+    "business",
+    "productivity"
+  ],
+  "lang": "pt-BR"
 }
-
