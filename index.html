@@ -5,11 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Totaliz - Gestão Inteligente</title>
   <meta name="theme-color" content="#6366f1">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="Totaliz">
-  <link rel="manifest" href="manifest.json">
-  <link rel="apple-touch-icon" href="icon-192.png">
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-gray-100">
@@ -50,7 +45,11 @@
       showModal: false,
       modalType: '',
       editingId: null,
-      loading: true
+      loading: true,
+      trialStartDate: null,
+      showTrialBanner: false,
+      showSupportModal: false,
+      nomeEmpresa: 'Minha Empresa' // Nome personalizável da empresa
     };
 
 
@@ -295,6 +294,50 @@
       }
     }
 
+    // ===== SISTEMA DE TRIAL PERIOD =====
+    async function checkTrialPeriod() {
+      try {
+        const q = query(collection(db, 'userSettings'), where("userId", "==", state.user.uid));
+        const querySnapshot = await getDocs(q);
+        
+        if (querySnapshot.empty) {
+          // Primeira vez do usuário - criar registro de trial
+          const trialStart = new Date().toISOString();
+          const settingsId = Date.now();
+          await setDoc(doc(db, 'userSettings', String(settingsId)), {
+            userId: state.user.uid,
+            trialStartDate: trialStart,
+            id: settingsId
+          });
+          state.trialStartDate = trialStart;
+        } else {
+          // Carregar data de início do trial existente
+          querySnapshot.forEach((docSnap) => {
+            const data = docSnap.data();
+            state.trialStartDate = data.trialStartDate;
+          });
+        }
+        
+        // Calcular se deve mostrar banner
+        const daysRemaining = getTrialDaysRemaining();
+        state.showTrialBanner = daysRemaining !== null && daysRemaining >= 0;
+      } catch (e) {
+        console.error('Erro ao verificar trial:', e);
+      }
+    }
+
+    function getTrialDaysRemaining() {
+      if (!state.trialStartDate) return null;
+      
+      const startDate = new Date(state.trialStartDate);
+      const today = new Date();
+      const diffTime = today - startDate;
+      const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+      const remaining = 30 - diffDays;
+      
+      return remaining;
+    }
+
     async function handleLogout() {
       if (confirm('Deseja realmente sair?')) {
         await signOut(auth);
@@ -372,6 +415,13 @@
         
         // Verificar se há caixa aberto
         state.caixaAtual = caixas.find(c => c.status === 'aberto') || null;
+        
+        // Carregar data de início do trial
+        await checkTrialPeriod();
+        
+        // Carregar configurações (nome da empresa)
+        await loadConfiguracoes();
+        
         state.loading = false;
         
         render();
@@ -382,14 +432,49 @@
       }
     }
 
+    // ===== CARREGAR CONFIGURAÇÕES =====
+    async function loadConfiguracoes() {
+      try {
+        const configDoc = await getDoc(doc(db, 'configuracoes', state.user.uid));
+        if (configDoc.exists()) {
+          const config = configDoc.data();
+          state.nomeEmpresa = config.nomeEmpresa || 'Minha Empresa';
+        }
+      } catch (e) {
+        console.log('Nenhuma configuração salva ainda');
+      }
+    }
+
+    // ===== SALVAR CONFIGURAÇÕES =====
+    async function salvarConfiguracoes(nomeEmpresa) {
+      try {
+        await setDoc(doc(db, 'configuracoes', state.user.uid), {
+          userId: state.user.uid,
+          nomeEmpresa: nomeEmpresa,
+          atualizadoEm: new Date().toISOString()
+        });
+        state.nomeEmpresa = nomeEmpresa;
+        console.log('✅ Configurações salvas!');
+        return true;
+      } catch (e) {
+        console.error('Erro ao salvar configurações:', e);
+        return false;
+      }
+    }
+
 
     function renderLoginScreen() {
       if (state.loginMode === 'activate') {
         return `
           <div class="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-blue-50 to-indigo-100">
-            <div class="bg-white rounded-lg shadow-2xl p-8 max-w-md w-full">
+            <div class="bg-white rounded-lg shadow-2xl p-8 max-w-md w-full relative">
+              <div class="absolute top-4 right-4">
+                <span class="bg-gradient-to-r from-purple-500 to-pink-500 text-white text-xs font-bold px-3 py-1 rounded-full shadow-lg" title="🚀 Versão Beta - Você faz parte da nossa comunidade pioneira!">
+                  BETA
+                </span>
+              </div>
               <div class="text-center mb-8">
-                <img src="icon-192.png" alt="Totaliz" class="w-24 h-24 mx-auto mb-4 rounded-2xl shadow-lg">
+                <img src="data:image/png;base64,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" alt="Totaliz" class="w-24 h-24 mx-auto mb-4 rounded-2xl shadow-lg">
                 <h1 class="text-3xl font-bold text-gray-800 mb-2">Ativar Conta</h1>
                 <p class="text-gray-600">Use o código que você recebeu por email</p>
               </div>
@@ -419,6 +504,20 @@
                   <button data-action="toggle-mode" class="text-blue-500 hover:underline font-medium">Fazer login</button>
                 </p>
               </div>
+              
+              <!-- Link para Comprar -->
+              <div class="mt-4 p-4 bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg border-2 border-green-200">
+                <div class="text-center">
+                  <p class="text-sm font-bold text-green-800 mb-2">🎯 Ainda não tem um código?</p>
+                  <a href="https://www.asaas.com/c/8zq5sfd7plrzqpoc" 
+                     target="_blank"
+                     class="inline-block bg-gradient-to-r from-green-500 to-emerald-600 text-white font-bold px-6 py-3 rounded-lg shadow-lg hover:from-green-600 hover:to-emerald-700 transition transform hover:scale-105">
+                    💳 Adquira agora por R$ 29,90/mês
+                  </a>
+                  <p class="text-xs text-green-700 mt-2">30 dias grátis • Sem compromisso • Cancele quando quiser</p>
+                </div>
+              </div>
+              
               <div class="mt-4 p-4 bg-blue-50 rounded-lg">
                 <p class="text-xs text-blue-800">
                   <strong>💡 Não recebeu o código?</strong><br>
@@ -431,9 +530,14 @@
       } else if (state.loginMode === 'login') {
         return `
           <div class="min-h-screen flex items-center justify-center p-4">
-            <div class="bg-white rounded-lg shadow-2xl p-8 max-w-md w-full">
+            <div class="bg-white rounded-lg shadow-2xl p-8 max-w-md w-full relative">
+              <div class="absolute top-4 right-4">
+                <span class="bg-gradient-to-r from-purple-500 to-pink-500 text-white text-xs font-bold px-3 py-1 rounded-full shadow-lg" title="🚀 Versão Beta - Você faz parte da nossa comunidade pioneira!">
+                  BETA
+                </span>
+              </div>
               <div class="text-center mb-8">
-                <img src="icon-192.png" alt="Totaliz" class="w-24 h-24 mx-auto mb-4 rounded-2xl shadow-lg">
+                <img src="data:image/png;base64,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" alt="Totaliz" class="w-24 h-24 mx-auto mb-4 rounded-2xl shadow-lg">
                 <h1 class="text-3xl font-bold text-gray-800 mb-2">Totaliz</h1>
                 <p class="text-gray-600">Sistema de Gestão</p>
               </div>
@@ -453,6 +557,16 @@
                   Comprou o Totaliz? 
                   <button data-action="toggle-activate" class="text-green-600 hover:underline font-medium">Ativar conta →</button>
                 </p>
+              </div>
+              
+              <!-- Link para Comprar -->
+              <div class="mt-4 text-center p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-200">
+                <p class="text-xs text-gray-700 mb-2">Ainda não é cliente?</p>
+                <a href="https://www.asaas.com/c/8zq5sfd7plrzqpoc" 
+                   target="_blank"
+                   class="text-blue-600 hover:text-blue-800 font-bold text-sm">
+                  💎 Conheça o Totaliz - 30 dias grátis!
+                </a>
               </div>
             </div>
           </div>
@@ -540,18 +654,28 @@
           <div class="max-w-7xl mx-auto">
             <div class="bg-gradient-to-r from-purple-600 via-pink-500 to-orange-500 text-white p-6 rounded-lg shadow-lg mb-6">
               <div class="flex justify-between items-center">
-                <div>
-                  <h1 class="text-3xl font-bold">Totaliz</h1>
-                  <p class="text-blue-100">Gestão Inteligente de Produção</p>
+                <div class="flex items-center gap-3">
+                  <div>
+                    <h1 class="text-3xl font-bold">Totaliz</h1>
+                    <p class="text-blue-100">Gestão Inteligente de Produção</p>
+                  </div>
+                  <span class="bg-white/20 text-white text-xs font-bold px-3 py-1 rounded-full" title="🚀 Versão Beta - Você faz parte da nossa comunidade pioneira!">
+                    BETA
+                  </span>
                 </div>
                 <div class="text-right">
-                  <p class="text-sm text-blue-100 mb-2">👤 ${state.user?.email || ''}</p>
+                  <p class="text-sm text-blue-100 mb-1">👤 ${state.user?.email || ''}</p>
+                  <button data-action="open-support" class="text-xs text-blue-100 hover:text-white mb-2 flex items-center gap-1 ml-auto">
+                    ❓ Precisa de ajuda?
+                  </button>
                   <button data-action="logout" class="bg-white/20 hover:bg-white/30 px-4 py-2 rounded text-sm transition">
                     🚪 Sair
                   </button>
                 </div>
               </div>
             </div>
+
+            ${state.showTrialBanner ? renderTrialBanner() : ''}
 
             ${state.activeTab !== 'dashboard' ? `
               <div class="mb-4">
@@ -568,6 +692,7 @@
         </div>
 
         ${state.showModal ? renderModal() : ''}
+        ${state.showSupportModal ? renderSupportModal() : ''}
       `;
 
       attachEventListeners();
@@ -607,6 +732,16 @@
             
             state.showModal = false;
             render();
+          };
+        });
+        
+        // Toggle tipo de valor
+        document.querySelectorAll('input[name="tipoValor"]').forEach(radio => {
+          radio.onchange = (e) => {
+            const valorDiv = document.getElementById('valor-fixo-div');
+            if (valorDiv) {
+              valorDiv.style.display = e.target.value === 'fixo' ? 'block' : 'none';
+            }
           };
         });
         
@@ -896,6 +1031,94 @@
       `;
     }
 
+    // ===== BANNER DE TRIAL PERIOD =====
+    function renderTrialBanner() {
+      const daysRemaining = getTrialDaysRemaining();
+      
+      if (daysRemaining === null || daysRemaining < 0) return '';
+      
+      const isUrgent = daysRemaining <= 7;
+      const bgColor = isUrgent ? 'bg-gradient-to-r from-red-500 to-orange-500' : 'bg-gradient-to-r from-blue-500 to-purple-500';
+      
+      return `
+        <div class="${bgColor} text-white p-4 rounded-lg shadow-lg mb-6">
+          <div class="flex items-center justify-between">
+            <div class="flex-1">
+              <h3 class="font-bold text-lg mb-1">
+                ${isUrgent ? '⚠️ Seu período de teste está acabando!' : '🎉 Aproveite 30 dias grátis sem compromisso!'}
+              </h3>
+              <p class="text-sm opacity-90">
+                ${daysRemaining === 0 
+                  ? 'Último dia de teste! Assine agora para não perder seus dados.' 
+                  : `Restam ${daysRemaining} ${daysRemaining === 1 ? 'dia' : 'dias'} do seu período de teste gratuito.`}
+              </p>
+            </div>
+            <div class="text-right ml-4">
+              <a 
+                href="https://www.asaas.com/c/8zq5sfd7plrzqpoc" 
+                target="_blank"
+                class="bg-white text-blue-600 font-bold px-6 py-3 rounded-lg shadow-lg hover:bg-blue-50 transition inline-block"
+              >
+                💳 Assinar por R$ 29,90/mês
+              </a>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    // ===== MODAL DE SUPORTE =====
+    function renderSupportModal() {
+      return `
+        <div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div class="bg-white rounded-lg shadow-2xl max-w-md w-full p-6">
+            <div class="flex justify-between items-center mb-6">
+              <h2 class="text-2xl font-bold text-gray-800">Precisa de Ajuda?</h2>
+              <button data-action="close-support" class="text-gray-400 hover:text-gray-600 text-2xl">×</button>
+            </div>
+            
+            <div class="space-y-4">
+              <!-- Email de Contato -->
+              <div class="p-4 bg-blue-50 rounded-lg border border-blue-200">
+                <h3 class="font-bold text-blue-900 mb-2 flex items-center gap-2">
+                  📧 Email
+                </h3>
+                <a href="mailto:contato@totaliz.com.br" class="text-blue-600 hover:underline">
+                  contato@totaliz.com.br
+                </a>
+              </div>
+              
+              <!-- WhatsApp -->
+              <div class="p-4 bg-green-50 rounded-lg border border-green-200">
+                <h3 class="font-bold text-green-900 mb-2 flex items-center gap-2">
+                  📱 WhatsApp
+                </h3>
+                <p class="text-sm text-gray-600 mb-3">
+                  Em breve! Estamos configurando nosso atendimento via WhatsApp.
+                </p>
+              </div>
+              
+              <!-- Formulário de Mensagem -->
+              <div class="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                <h3 class="font-bold text-gray-900 mb-3">✉️ Envie sua mensagem</h3>
+                <textarea 
+                  id="support-message" 
+                  class="w-full border rounded px-3 py-2 h-32 focus:ring-2 focus:ring-blue-500" 
+                  placeholder="Descreva sua dúvida ou problema..."
+                ></textarea>
+                <button 
+                  data-action="send-support-email" 
+                  class="mt-3 w-full bg-blue-500 text-white py-2 rounded hover:bg-blue-600 font-medium"
+                >
+                  Enviar por Email
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
     function renderContent() {
       switch(state.activeTab) {
         case 'dashboard': return renderDashboard();
@@ -909,6 +1132,7 @@
         case 'financeiro': return renderFinanceiro();
         case 'relatorios': return renderRelatorios();
         case 'lista-compras': return renderListaCompras();
+        case 'configuracoes': return renderConfiguracoes();
         default: return '<p>Selecione uma aba</p>';
       }
     }
@@ -920,8 +1144,8 @@
       
       return `
         <div class="text-center mb-6">
-          <h2 class="text-3xl font-bold mb-2">Totaliz</h2>
-          <p class="text-gray-600">Selecione uma opção abaixo</p>
+          <h2 class="text-3xl font-bold mb-2">${state.nomeEmpresa}</h2>
+          <p class="text-sm text-gray-500">Sistema de Gestão</p>
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
@@ -983,6 +1207,12 @@
             <div class="text-5xl mb-3">🛒</div>
             <h3 class="text-xl font-bold mb-2">Lista de Compras</h3>
             <p class="text-sm opacity-90">${state.insumos.filter(i => i.quantidade <= i.estoqueMinimo).length} itens faltando</p>
+          </button>
+
+          <button data-nav="configuracoes" class="bg-gradient-to-br from-gray-500 to-gray-600 text-white p-6 rounded-lg shadow-lg hover:shadow-xl transition-all hover:scale-105">
+            <div class="text-5xl mb-3">⚙️</div>
+            <h3 class="text-xl font-bold mb-2">Configurações</h3>
+            <p class="text-sm opacity-90">Personalize seu sistema</p>
           </button>
         </div>
 
@@ -1107,8 +1337,9 @@
                     <td class="px-4 py-3">R$ ${i.precoMedio.toFixed(2)}</td>
                     <td class="px-4 py-3">
                       <div class="flex gap-2">
-                        <button data-action="edit-insumo" data-id="${i.id}" class="text-blue-500 hover:text-blue-600">✏️</button>
-                        <button data-action="delete-insumo" data-id="${i.id}" class="text-red-500 hover:text-red-600">🗑️</button>
+                        <button data-action="edit-insumo" data-id="${i.id}" class="text-blue-500 hover:text-blue-600 text-sm">✏️</button>
+                        <button data-action="baixar-insumo" data-id="${i.id}" data-nome="${i.nome}" data-estoque="${i.quantidade}" data-unidade="${i.unidade}" class="text-orange-500 hover:text-orange-600 text-sm font-bold">📦</button>
+                        <button data-action="delete-insumo" data-id="${i.id}" class="text-red-500 hover:text-red-600 text-sm">🗑️</button>
                       </div>
                     </td>
                   </tr>
@@ -1217,8 +1448,9 @@
                       <td class="px-4 py-3 text-green-600 font-medium">R$ ${(p.precoVenda - p.custoUnitario).toFixed(2)}</td>
                       <td class="px-4 py-3">
                         <div class="flex gap-2">
-                          <button data-action="edit-produto" data-id="${p.id}" class="text-blue-500 hover:text-blue-600">✏️</button>
-                          <button data-action="delete-produto" data-id="${p.id}" class="text-red-500 hover:text-red-600">🗑️</button>
+                          <button data-action="edit-produto" data-id="${p.id}" class="text-blue-500 hover:text-blue-600 text-sm">✏️</button>
+                          <button data-action="baixar-produto" data-id="${p.id}" data-nome="${p.nome}" data-estoque="${p.quantidade}" class="text-orange-500 hover:text-orange-600 text-sm font-bold">📦</button>
+                          <button data-action="delete-produto" data-id="${p.id}" class="text-red-500 hover:text-red-600 text-sm">🗑️</button>
                         </div>
                       </td>
                     </tr>
@@ -1417,7 +1649,7 @@
             <div class="divide-y">
               ${movHoje.slice().reverse().map(m => `
                 <div class="p-4 flex justify-between items-center">
-                  <div>
+                  <div class="flex-1">
                     <p class="font-medium">${m.descricao}</p>
                     <p class="text-xs text-gray-500">${new Date(m.data).toLocaleTimeString('pt-BR')}</p>
                   </div>
@@ -1425,7 +1657,11 @@
                     <p class="font-bold ${m.tipo === 'entrada' ? 'text-green-600' : 'text-red-600'}">
                       ${m.tipo === 'entrada' ? '+' : '-'} R$ ${m.valor.toFixed(2)}
                     </p>
-                    <p class="text-xs text-gray-500">${m.categoria || m.tipo}</p>
+                    <p class="text-xs text-gray-500 mb-2">${m.categoria || m.tipo}</p>
+                    <div class="flex gap-2 justify-end">
+                      <button data-action="editar-mov" data-id="${m.id}" class="text-blue-500 hover:text-blue-700 text-xs">✏️ Editar</button>
+                      <button data-action="excluir-mov" data-id="${m.id}" class="text-red-500 hover:text-red-700 text-xs">🗑️ Excluir</button>
+                    </div>
                   </div>
                 </div>
               `).join('')}
@@ -1495,8 +1731,9 @@
             <p class="text-3xl font-bold text-yellow-800">${aVencer}</p>
           </div>
           <div class="bg-green-50 border border-green-200 p-4 rounded-lg">
-            <p class="text-sm text-green-700">Total Mensal</p>
-            <p class="text-3xl font-bold text-green-800">R$ ${despesasMes.reduce((t, d) => t + d.valor, 0).toFixed(2)}</p>
+            <p class="text-sm text-green-700">Total Mensal (fixo)</p>
+            <p class="text-3xl font-bold text-green-800">R$ ${despesasMes.filter(d => !d.valorVariavel).reduce((t, d) => t + d.valor, 0).toFixed(2)}</p>
+            <p class="text-xs text-green-600 mt-1">+ despesas variáveis</p>
           </div>
         </div>
 
@@ -1522,9 +1759,9 @@
                       <p class="text-sm text-gray-600">Categoria: ${d.categoria}</p>
                     </div>
                     <div class="text-right">
-                      <p class="text-xl font-bold text-red-600">R$ ${d.valor.toFixed(2)}</p>
+                      <p class="text-xl font-bold text-red-600">${d.valorVariavel ? 'Variável' : 'R$ ' + d.valor.toFixed(2)}</p>
                       <div class="flex gap-2 mt-2">
-                        ${!d.paga ? `<button data-action="pagar-despesa-rec" data-id="${d.id}" data-valor="${d.valor}" data-nome="${d.nome}" class="text-green-500 hover:text-green-600 text-sm">💰 Pagar</button>` : ''}
+                        ${!d.paga ? `<button data-action="pagar-despesa-rec" data-id="${d.id}" data-variavel="${d.valorVariavel || false}" data-valor="${d.valor || 0}" data-nome="${d.nome}" class="text-green-500 hover:text-green-600 text-sm font-bold">💰 Pagar</button>` : ''}
                         <button data-action="delete-despesa-rec" data-id="${d.id}" class="text-red-500 hover:text-red-600 text-sm">🗑️</button>
                       </div>
                     </div>
@@ -1550,7 +1787,7 @@
                       <p class="text-sm text-gray-600">Categoria: ${d.categoria}</p>
                     </div>
                     <div class="text-right">
-                      <p class="text-lg font-bold">R$ ${d.valor.toFixed(2)}</p>
+                      <p class="text-lg font-bold">${d.valorVariavel ? '<span class="text-blue-600">📊 Variável</span>' : 'R$ ' + d.valor.toFixed(2)}</p>
                       <button data-action="delete-despesa-rec" data-id="${d.id}" class="text-red-500 hover:text-red-600 mt-2">🗑️</button>
                     </div>
                   </div>
@@ -1900,6 +2137,51 @@
       `;
     }
 
+    // ===== TELA DE CONFIGURAÇÕES =====
+    function renderConfiguracoes() {
+      return `
+        <div class="bg-white rounded-lg shadow p-6">
+          <h2 class="text-2xl font-bold mb-6">⚙️ Configurações</h2>
+          
+          <div class="max-w-2xl">
+            <div class="mb-6 p-6 bg-blue-50 border border-blue-200 rounded-lg">
+              <h3 class="text-lg font-bold text-blue-900 mb-4">🏢 Dados da Empresa</h3>
+              
+              <div class="space-y-4">
+                <div>
+                  <label class="block text-sm font-medium mb-2 text-gray-700">Nome da sua Empresa</label>
+                  <input 
+                    type="text" 
+                    id="nome-empresa" 
+                    value="${state.nomeEmpresa}" 
+                    class="w-full border rounded-lg px-4 py-3 focus:ring-2 focus:ring-blue-500 text-lg"
+                    placeholder="Ex: Geladinhos Gourmet"
+                  >
+                  <p class="text-xs text-gray-500 mt-2">Este nome aparecerá no dashboard e relatórios</p>
+                </div>
+                
+                <button 
+                  data-action="salvar-config" 
+                  class="w-full bg-blue-500 text-white py-3 rounded-lg hover:bg-blue-600 font-bold transition"
+                >
+                  💾 Salvar Configurações
+                </button>
+              </div>
+            </div>
+            
+            <div class="p-6 bg-gray-50 border border-gray-200 rounded-lg">
+              <h3 class="text-lg font-bold text-gray-900 mb-3">ℹ️ Informações do Sistema</h3>
+              <div class="space-y-2 text-sm text-gray-600">
+                <p><strong>Versão:</strong> Totaliz v2.1 BETA</p>
+                <p><strong>Email:</strong> ${state.user?.email || ''}</p>
+                <p><strong>Trial:</strong> ${getTrialDaysRemaining() !== null ? `${getTrialDaysRemaining()} dias restantes` : 'Período de teste'}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
     function renderModal() {
       if (!state.showModal) return '';
       
@@ -2161,11 +2443,12 @@
             <div>
               <label class="block text-sm mb-1">Cliente</label>
               <select id="clienteVenda" class="w-full border rounded px-3 py-2">
-                <option value="">Selecione...</option>
+                <option value="">💰 Venda Avulsa (Dinheiro/Pix)</option>
                 ${clientesOrdenados.map(c => `
                   <option value="${c.id}">${c.nome} ${c.saldo < 0 ? `(deve R$ ${Math.abs(c.saldo).toFixed(2)})` : c.saldo > 0 ? `(crédito R$ ${c.saldo.toFixed(2)})` : ''}</option>
                 `).join('')}
               </select>
+              <p class="text-xs text-gray-500 mt-1">💡 Para fiado, selecione o cliente</p>
             </div>
             <div>
               <div class="flex justify-between items-center mb-2">
@@ -2308,11 +2591,28 @@
               <label class="block text-sm font-medium mb-1">Nome</label>
               <input type="text" id="nomeDespesaRec" class="w-full border rounded px-3 py-2" placeholder="Ex: Aluguel, Luz">
             </div>
+            
             <div>
+              <label class="block text-sm font-medium mb-2">Tipo de Valor</label>
+              <div class="flex gap-4">
+                <label class="flex items-center">
+                  <input type="radio" name="tipoValor" value="fixo" checked class="mr-2">
+                  <span class="text-sm">💵 Valor Fixo</span>
+                </label>
+                <label class="flex items-center">
+                  <input type="radio" name="tipoValor" value="variavel" class="mr-2">
+                  <span class="text-sm">📊 Valor Variável</span>
+                </label>
+              </div>
+              <p class="text-xs text-gray-500 mt-1">💡 Variável = você informa o valor no dia do pagamento (ex: conta de luz)</p>
+            </div>
+            
+            <div id="valor-fixo-div">
               <label class="block text-sm font-medium mb-1">Valor (R$)</label>
               <input type="number" step="0.01" id="valorDespesaRec" class="w-full border rounded px-3 py-2">
               <p class="text-xs text-gray-500 mt-1">💡 Digite o valor mensal/da parcela</p>
             </div>
+            
             <div>
               <label class="block text-sm font-medium mb-1">Tipo</label>
               <select id="tipoDespesaRec" class="w-full border rounded px-3 py-2">
@@ -2487,6 +2787,51 @@
           }
         });
       });
+      
+      // Baixar estoque de insumo
+      document.querySelectorAll('[data-action="baixar-insumo"]').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          const id = e.currentTarget.dataset.id;
+          const nome = e.currentTarget.dataset.nome;
+          const estoque = parseFloat(e.currentTarget.dataset.estoque);
+          const unidade = e.currentTarget.dataset.unidade;
+          
+          const qtd = prompt(`📦 Baixar Estoque - ${nome}\n\nEstoque atual: ${estoque.toFixed(2)} ${unidade}\n\nQuantidade a baixar:`);
+          if (!qtd) return;
+          
+          const qtdFloat = parseFloat(qtd.replace(',', '.'));
+          if (isNaN(qtdFloat) || qtdFloat <= 0) {
+            return alert('❌ Quantidade inválida!');
+          }
+          
+          if (qtdFloat > estoque) {
+            return alert('❌ Quantidade maior que o estoque!');
+          }
+          
+          const motivo = prompt('📝 Motivo da baixa:', 'Perda/Vencido/Uso');
+          
+          const insumo = state.insumos.find(i => i.id == id);
+          if (insumo) {
+            insumo.quantidade -= qtdFloat;
+            await saveToFirebase('insumos', id, insumo);
+            
+            // Registrar movimentação
+            const mov = {
+              id: Date.now(),
+              tipo: 'saida',
+              categoria: 'baixa-estoque',
+              data: new Date().toISOString(),
+              descricao: `Baixa: ${nome} - ${motivo || 'Sem motivo'}`,
+              valor: 0
+            };
+            await saveToFirebase('movimentacoes', mov.id, mov);
+            state.movimentacoes.push(mov);
+            
+            alert(`✅ Baixa registrada!\n\nNovo estoque: ${insumo.quantidade.toFixed(2)} ${unidade}`);
+            render();
+          }
+        });
+      });
 
       document.querySelectorAll('[data-action="delete-produto"]').forEach(btn => {
         btn.addEventListener('click', async (e) => {
@@ -2532,6 +2877,50 @@
             state.produtos = state.produtos.filter(p => p.id != id);
             
             alert(`✅ ${produto.nome} transferido para insumos!`);
+            render();
+          }
+        });
+      });
+      
+      // Baixar estoque de produto
+      document.querySelectorAll('[data-action="baixar-produto"]').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          const id = e.currentTarget.dataset.id;
+          const nome = e.currentTarget.dataset.nome;
+          const estoque = parseFloat(e.currentTarget.dataset.estoque);
+          
+          const qtd = prompt(`📦 Baixar Estoque - ${nome}\n\nEstoque atual: ${estoque} unidades\n\nQuantidade a baixar:`);
+          if (!qtd) return;
+          
+          const qtdInt = parseInt(qtd);
+          if (isNaN(qtdInt) || qtdInt <= 0) {
+            return alert('❌ Quantidade inválida!');
+          }
+          
+          if (qtdInt > estoque) {
+            return alert('❌ Quantidade maior que o estoque!');
+          }
+          
+          const motivo = prompt('📝 Motivo da baixa:', 'Perda/Vencido/Doação');
+          
+          const produto = state.produtos.find(p => p.id == id);
+          if (produto) {
+            produto.quantidade -= qtdInt;
+            await saveToFirebase('produtos', id, produto);
+            
+            // Registrar movimentação
+            const mov = {
+              id: Date.now(),
+              tipo: 'saida',
+              categoria: 'baixa-estoque',
+              data: new Date().toISOString(),
+              descricao: `Baixa: ${nome} - ${motivo || 'Sem motivo'}`,
+              valor: 0
+            };
+            await saveToFirebase('movimentacoes', mov.id, mov);
+            state.movimentacoes.push(mov);
+            
+            alert(`✅ Baixa registrada!\n\nNovo estoque: ${produto.quantidade} unidades`);
             render();
           }
         });
@@ -2896,6 +3285,63 @@
       });
 
 
+      // ===== CONFIGURAÇÕES =====
+      document.querySelectorAll('[data-action="salvar-config"]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const nomeEmpresa = document.getElementById('nome-empresa')?.value;
+          
+          if (!nomeEmpresa || nomeEmpresa.trim() === '') {
+            alert('⚠️ Por favor, digite o nome da sua empresa');
+            return;
+          }
+          
+          const sucesso = await salvarConfiguracoes(nomeEmpresa.trim());
+          
+          if (sucesso) {
+            alert('✅ Configurações salvas com sucesso!');
+            render();
+          } else {
+            alert('❌ Erro ao salvar configurações. Tente novamente.');
+          }
+        });
+      });
+
+
+      // ===== SUPORTE =====
+      document.querySelectorAll('[data-action="open-support"]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          state.showSupportModal = true;
+          render();
+        });
+      });
+
+      document.querySelectorAll('[data-action="close-support"]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          state.showSupportModal = false;
+          render();
+        });
+      });
+
+      document.querySelectorAll('[data-action="send-support-email"]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const message = document.getElementById('support-message')?.value;
+          
+          if (!message || message.trim() === '') {
+            alert('Por favor, escreva sua mensagem antes de enviar.');
+            return;
+          }
+          
+          const subject = encodeURIComponent('Suporte Totaliz');
+          const body = encodeURIComponent(`Olá equipe Totaliz,\n\n${message}\n\n---\nEnviado por: ${state.user?.email || 'Usuário'}`);
+          
+          window.open(`mailto:contato@totaliz.com.br?subject=${subject}&body=${body}`, '_blank');
+          
+          state.showSupportModal = false;
+          render();
+        });
+      });
+
+
       // Editar forma de pagamento da venda
       document.querySelectorAll('[data-action="edit-pagamento-venda"]').forEach(btn => {
         btn.addEventListener('click', (e) => {
@@ -3036,8 +3482,13 @@
             const desconto = parseFloat(document.getElementById('descontoVenda').value || 0);
             const pagamento = document.getElementById('pagamentoVenda').value;
 
-            if (!cliId || itensVenda.length === 0) {
-              return alert('Preencha cliente e produtos');
+            // Cliente é obrigatório APENAS se fiado
+            if (pagamento === 'fiado' && !cliId) {
+              return alert('⚠️ Para venda fiada, selecione um cliente!');
+            }
+            
+            if (itensVenda.length === 0) {
+              return alert('⚠️ Adicione produtos à venda!');
             }
 
             for (let item of itensVenda) {
@@ -3047,8 +3498,8 @@
               }
             }
 
-            const cliente = state.clientes.find(c => c.id == cliId);
-            const creditoDisponivel = cliente.saldo > 0 ? cliente.saldo : 0;
+            const cliente = cliId ? state.clientes.find(c => c.id == cliId) : null;
+            const creditoDisponivel = cliente && cliente.saldo > 0 ? cliente.saldo : 0;
 
             const subtotal = itensVenda.reduce((t, item) => {
               const p = state.produtos.find(pr => pr.id == item.produtoId);
@@ -3081,21 +3532,25 @@
               }
             }
 
-            let novoSaldo = cliente.saldo;
-            if (usarCredito && creditoUsado > 0) {
-              novoSaldo -= creditoUsado;
-            }
-            if (pagamento === 'fiado') {
-              novoSaldo -= valorFinal;
-            }
+            // Só mexe no saldo se tiver cliente
+            if (cliente) {
+              let novoSaldo = cliente.saldo;
+              if (usarCredito && creditoUsado > 0) {
+                novoSaldo -= creditoUsado;
+              }
+              if (pagamento === 'fiado') {
+                novoSaldo -= valorFinal;
+              }
 
-            cliente.saldo = novoSaldo;
-            await saveToFirebase('clientes', cliente.id, cliente);
+              cliente.saldo = novoSaldo;
+              await saveToFirebase('clientes', cliente.id, cliente);
+            }
 
             const novaVenda = {
               id: Date.now(),
               data: new Date().toISOString(),
-              clienteId: parseInt(cliId),
+              clienteId: cliId ? parseInt(cliId) : null,
+              clienteNome: cliente ? cliente.nome : 'Venda Avulsa',
               itens: Object.values(itensAgrupados),
               subtotal,
               desconto,
@@ -3212,6 +3667,53 @@
           resumo.classList.add('hidden');
         }
       }
+      
+      // ===== EDITAR/EXCLUIR MOVIMENTAÇÃO =====
+      
+      // Excluir movimentação
+      document.querySelectorAll('[data-action="excluir-mov"]').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          if (confirm('⚠️ Tem certeza que deseja excluir esta movimentação?\n\nEsta ação não pode ser desfeita.')) {
+            const id = e.currentTarget.dataset.id;
+            await deleteFromFirebase('movimentacoes', id);
+            state.movimentacoes = state.movimentacoes.filter(m => m.id != id);
+            alert('✅ Movimentação excluída!');
+            render();
+          }
+        });
+      });
+      
+      // Editar movimentação
+      document.querySelectorAll('[data-action="editar-mov"]').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          const id = e.currentTarget.dataset.id;
+          const mov = state.movimentacoes.find(m => m.id == id);
+          
+          if (!mov) return alert('❌ Movimentação não encontrada');
+          
+          // Pedir nova descrição
+          const novaDesc = prompt('📝 Descrição:', mov.descricao);
+          if (novaDesc === null) return; // Cancelou
+          
+          // Pedir novo valor
+          const novoValor = prompt('💰 Valor (R$):', mov.valor.toFixed(2));
+          if (novoValor === null) return; // Cancelou
+          
+          const valorFloat = parseFloat(novoValor.replace(',', '.'));
+          if (isNaN(valorFloat) || valorFloat <= 0) {
+            return alert('❌ Valor inválido!');
+          }
+          
+          // Atualizar
+          mov.descricao = novaDesc.trim() || mov.descricao;
+          mov.valor = valorFloat;
+          
+          saveToFirebase('movimentacoes', mov.id, mov).then(() => {
+            alert('✅ Movimentação atualizada!');
+            render();
+          });
+        });
+      });
     }
 
 
@@ -3340,6 +3842,16 @@
 
       // ===== DESPESAS RECORRENTES =====
       
+      // Toggle tipo de valor (fixo/variável)
+      document.querySelectorAll('input[name="tipoValor"]').forEach(radio => {
+        radio.addEventListener('change', (e) => {
+          const valorDiv = document.getElementById('valor-fixo-div');
+          if (valorDiv) {
+            valorDiv.style.display = e.target.value === 'fixo' ? 'block' : 'none';
+          }
+        });
+      });
+      
       // Toggle parcelas no modal
       const tipoDespSelect = document.getElementById('tipoDespesaRec');
       if (tipoDespSelect) {
@@ -3355,19 +3867,25 @@
       document.querySelectorAll('[data-action="save-despesa-rec"]').forEach(btn => {
         btn.addEventListener('click', async () => {
           const nome = document.getElementById('nomeDespesaRec')?.value;
-          const valor = parseFloat(document.getElementById('valorDespesaRec')?.value);
+          const tipoValor = document.querySelector('input[name="tipoValor"]:checked')?.value;
+          const valor = parseFloat(document.getElementById('valorDespesaRec')?.value) || 0;
           const tipo = document.getElementById('tipoDespesaRec')?.value;
           const diaVencimento = parseInt(document.getElementById('diaVencimento')?.value);
           const categoria = document.getElementById('categoriaDespesaRec')?.value;
           
-          if (!nome || !valor || !diaVencimento) {
-            return alert('Preencha todos os campos');
+          if (!nome || !diaVencimento) {
+            return alert('Preencha nome e dia de vencimento');
+          }
+          
+          if (tipoValor === 'fixo' && !valor) {
+            return alert('Digite o valor da despesa');
           }
           
           const novaDespesa = {
             id: Date.now(),
             nome,
-            valor,
+            valor: tipoValor === 'fixo' ? valor : 0,
+            valorVariavel: tipoValor === 'variavel',
             tipo,
             diaVencimento,
             categoria,
@@ -3390,8 +3908,20 @@
       document.querySelectorAll('[data-action="pagar-despesa-rec"]').forEach(btn => {
         btn.addEventListener('click', async (e) => {
           const id = e.currentTarget.dataset.id;
-          const valor = parseFloat(e.currentTarget.dataset.valor);
+          let valor = parseFloat(e.currentTarget.dataset.valor);
           const nome = e.currentTarget.dataset.nome;
+          const variavel = e.currentTarget.dataset.variavel === 'true';
+          
+          // Se for despesa variável, pedir o valor
+          if (variavel) {
+            const valorDigitado = prompt(`💰 ${nome}\n\nDigite o valor da despesa este mês:\n(Ex: 150.50)`);
+            if (!valorDigitado) return;
+            
+            valor = parseFloat(valorDigitado.replace(',', '.'));
+            if (isNaN(valor) || valor <= 0) {
+              return alert('❌ Valor inválido!');
+            }
+          }
           
           if (confirm(`Registrar pagamento de ${nome} - R$ ${valor.toFixed(2)}?`)) {
             const hoje = new Date();
@@ -3428,18 +3958,8 @@
           }
         });
       });
+      
     loadAllData();
-  </script>
-
-  <script>
-    // Registrar Service Worker para PWA
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/service-worker.js')
-          .then(reg => console.log('✅ Service Worker registrado'))
-          .catch(err => console.log('❌ Erro no Service Worker:', err));
-      });
-    }
   </script>
 </body>
 </html>
