@@ -35,7 +35,7 @@
     let state = {
       user: null,
       showLoginScreen: true,
-      loginMode: 'login', // 'login', 'activate'
+      loginMode: 'login',
       activeTab: 'dashboard',
       modalTipo: null,
       insumos: [],
@@ -219,81 +219,6 @@
         }
       }
     }
-    
-    async function handleActivation(code, email, password, confirmPassword) {
-      // Validações
-      if (!code || code.length < 9) {
-        return alert('❌ Código inválido! Deve ter o formato: ABC-123-XYZ');
-      }
-      
-      if (!email || !email.includes('@')) {
-        return alert('❌ Email inválido!');
-      }
-      
-      if (password !== confirmPassword) {
-        return alert('❌ As senhas não coincidem!');
-      }
-      
-      if (password.length < 6) {
-        return alert('❌ A senha deve ter pelo menos 6 caracteres!');
-      }
-      
-      try {
-        // Verificar se código existe e é válido
-        const codigosRef = collection(db, 'codigosAtivacao');
-        const q = query(codigosRef, where("codigo", "==", code));
-        const querySnapshot = await getDocs(q);
-        
-        if (querySnapshot.empty) {
-          return alert('❌ Código não encontrado! Verifique se digitou corretamente.');
-        }
-        
-        const codigoDoc = querySnapshot.docs[0];
-        const codigoData = codigoDoc.data();
-        
-        // Verificar se já foi usado
-        if (codigoData.usado) {
-          return alert('❌ Este código já foi utilizado!');
-        }
-        
-        // Verificar validade (30 dias)
-        const criadoEm = new Date(codigoData.criadoEm);
-        const hoje = new Date();
-        const diasPassados = Math.floor((hoje - criadoEm) / (1000 * 60 * 60 * 24));
-        
-        if (diasPassados > 30) {
-          return alert('❌ Este código expirou! Entre em contato com o suporte.');
-        }
-        
-        // Criar conta no Firebase Auth
-        await createUserWithEmailAndPassword(auth, email, password);
-        
-        // Marcar código como usado
-        await setDoc(doc(db, 'codigosAtivacao', codigoDoc.id), {
-          ...codigoData,
-          usado: true,
-          usadoEm: new Date().toISOString(),
-          emailAtivado: email
-        });
-        
-        alert('🎉 Conta ativada com sucesso! Você já pode fazer login.');
-        state.loginMode = 'login';
-        render();
-        
-      } catch (error) {
-        console.error('Erro na ativação:', error);
-        
-        if (error.code === 'auth/email-already-in-use') {
-          alert('❌ Este email já está cadastrado! Use outro email ou faça login.');
-        } else if (error.code === 'auth/invalid-email') {
-          alert('❌ Email inválido!');
-        } else if (error.code === 'auth/weak-password') {
-          alert('❌ Senha muito fraca! Use no mínimo 6 caracteres.');
-        } else {
-          alert('❌ Erro ao ativar conta: ' + error.message);
-        }
-      }
-    }
 
     async function handleLogout() {
       if (confirm('Deseja realmente sair?')) {
@@ -384,51 +309,7 @@
 
 
     function renderLoginScreen() {
-      if (state.loginMode === 'activate') {
-        return `
-          <div class="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-blue-50 to-indigo-100">
-            <div class="bg-white rounded-lg shadow-2xl p-8 max-w-md w-full">
-              <div class="text-center mb-8">
-                <img src="icon-192.png" alt="Totaliz" class="w-24 h-24 mx-auto mb-4 rounded-2xl shadow-lg">
-                <h1 class="text-3xl font-bold text-gray-800 mb-2">Ativar Conta</h1>
-                <p class="text-gray-600">Use o código que você recebeu por email</p>
-              </div>
-              <form id="activate-form" class="space-y-4">
-                <div>
-                  <label class="block text-sm font-medium mb-2">Código de Ativação</label>
-                  <input type="text" id="activation-code" required class="w-full border rounded px-4 py-2 focus:ring-2 focus:ring-blue-500 text-center text-lg font-mono" placeholder="ABC-123-XYZ" maxlength="11">
-                  <p class="text-xs text-gray-500 mt-1">Digite o código que você recebeu por email após a compra</p>
-                </div>
-                <div>
-                  <label class="block text-sm font-medium mb-2">Seu Email</label>
-                  <input type="email" id="activate-email" required class="w-full border rounded px-4 py-2 focus:ring-2 focus:ring-blue-500" placeholder="seu@email.com">
-                </div>
-                <div>
-                  <label class="block text-sm font-medium mb-2">Criar Senha</label>
-                  <input type="password" id="activate-password" required class="w-full border rounded px-4 py-2 focus:ring-2 focus:ring-blue-500" placeholder="Mínimo 6 caracteres">
-                </div>
-                <div>
-                  <label class="block text-sm font-medium mb-2">Confirmar Senha</label>
-                  <input type="password" id="activate-confirm" required class="w-full border rounded px-4 py-2 focus:ring-2 focus:ring-blue-500" placeholder="Digite a senha novamente">
-                </div>
-                <button type="submit" class="w-full bg-green-500 text-white py-3 rounded hover:bg-green-600 font-medium">Ativar Conta</button>
-              </form>
-              <div class="mt-6 text-center">
-                <p class="text-sm text-gray-600">
-                  Já tem conta ativa? 
-                  <button data-action="toggle-mode" class="text-blue-500 hover:underline font-medium">Fazer login</button>
-                </p>
-              </div>
-              <div class="mt-4 p-4 bg-blue-50 rounded-lg">
-                <p class="text-xs text-blue-800">
-                  <strong>💡 Não recebeu o código?</strong><br>
-                  Verifique sua caixa de spam ou entre em contato: suporte@totaliz.com.br
-                </p>
-              </div>
-            </div>
-          </div>
-        `;
-      } else if (state.loginMode === 'login') {
+      if (state.loginMode === 'login') {
         return `
           <div class="min-h-screen flex items-center justify-center p-4">
             <div class="bg-white rounded-lg shadow-2xl p-8 max-w-md w-full">
@@ -450,8 +331,41 @@
               </form>
               <div class="mt-6 text-center">
                 <p class="text-sm text-gray-600">
-                  Comprou o Totaliz? 
-                  <button data-action="toggle-activate" class="text-green-600 hover:underline font-medium">Ativar conta →</button>
+                  Não tem conta? 
+                  <button data-action="toggle-mode" class="text-blue-500 hover:underline font-medium">Criar conta</button>
+                </p>
+              </div>
+            </div>
+          </div>
+        `;
+      } else {
+        return `
+          <div class="min-h-screen flex items-center justify-center p-4">
+            <div class="bg-white rounded-lg shadow-2xl p-8 max-w-md w-full">
+              <div class="text-center mb-8">
+                <img src="icon-192.png" alt="Totaliz" class="w-24 h-24 mx-auto mb-4 rounded-2xl shadow-lg">
+                <h1 class="text-3xl font-bold text-gray-800 mb-2">Criar Conta</h1>
+                <p class="text-gray-600">Cadastre-se gratuitamente</p>
+              </div>
+              <form id="register-form" class="space-y-4">
+                <div>
+                  <label class="block text-sm font-medium mb-2">Email</label>
+                  <input type="email" id="reg-email" required class="w-full border rounded px-4 py-2 focus:ring-2 focus:ring-blue-500" placeholder="seu@email.com">
+                </div>
+                <div>
+                  <label class="block text-sm font-medium mb-2">Senha</label>
+                  <input type="password" id="reg-password" required class="w-full border rounded px-4 py-2 focus:ring-2 focus:ring-blue-500" placeholder="Mínimo 6 caracteres">
+                </div>
+                <div>
+                  <label class="block text-sm font-medium mb-2">Confirmar Senha</label>
+                  <input type="password" id="reg-confirm" required class="w-full border rounded px-4 py-2 focus:ring-2 focus:ring-blue-500" placeholder="Digite a senha novamente">
+                </div>
+                <button type="submit" class="w-full bg-green-500 text-white py-3 rounded hover:bg-green-600 font-medium">Criar Conta</button>
+              </form>
+              <div class="mt-6 text-center">
+                <p class="text-sm text-gray-600">
+                  Já tem conta? 
+                  <button data-action="toggle-mode" class="text-blue-500 hover:underline font-medium">Fazer login</button>
                 </p>
               </div>
             </div>
@@ -471,42 +385,20 @@
         });
       }
 
-      const activateForm = document.getElementById('activate-form');
-      if (activateForm) {
-        activateForm.addEventListener('submit', async (e) => {
+      const registerForm = document.getElementById('register-form');
+      if (registerForm) {
+        registerForm.addEventListener('submit', (e) => {
           e.preventDefault();
-          const code = document.getElementById('activation-code').value.trim().toUpperCase();
-          const email = document.getElementById('activate-email').value.trim();
-          const password = document.getElementById('activate-password').value;
-          const confirm = document.getElementById('activate-confirm').value;
-          await handleActivation(code, email, password, confirm);
+          const email = document.getElementById('reg-email').value;
+          const password = document.getElementById('reg-password').value;
+          const confirm = document.getElementById('reg-confirm').value;
+          handleRegister(email, password, confirm);
         });
-        
-        // Formatar código automaticamente (adicionar hífens)
-        const codeInput = document.getElementById('activation-code');
-        if (codeInput) {
-          codeInput.addEventListener('input', (e) => {
-            let value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
-            if (value.length > 3 && value.length <= 6) {
-              value = value.slice(0, 3) + '-' + value.slice(3);
-            } else if (value.length > 6) {
-              value = value.slice(0, 3) + '-' + value.slice(3, 6) + '-' + value.slice(6, 9);
-            }
-            e.target.value = value;
-          });
-        }
       }
 
       document.querySelectorAll('[data-action="toggle-mode"]').forEach(btn => {
         btn.addEventListener('click', () => {
-          state.loginMode = 'login';
-          render();
-        });
-      });
-      
-      document.querySelectorAll('[data-action="toggle-activate"]').forEach(btn => {
-        btn.addEventListener('click', () => {
-          state.loginMode = 'activate';
+          state.loginMode = state.loginMode === 'login' ? 'register' : 'login';
           render();
         });
       });
