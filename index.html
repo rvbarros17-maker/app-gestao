@@ -399,7 +399,9 @@
         return true;
       } catch (e) {
         console.error('Erro ao salvar:', e);
-        alert('Erro ao salvar dados. Tente novamente.');
+        console.error('Collection:', collectionName, 'ID:', id);
+        console.error('Erro completo:', e.message, e.code);
+        alert(`Erro ao salvar dados em ${collectionName}. ${e.message || 'Tente novamente.'}`);
         return false;
       }
     }
@@ -1569,6 +1571,7 @@
                     </td>
                     <td class="px-4 py-3">
                       <div class="flex gap-2">
+                        <button data-action="ver-detalhes-cliente" data-id="${c.id}" class="text-purple-500 hover:text-purple-600" title="Ver Histórico de Compras">👁️</button>
                         ${c.saldo < 0 ? `<button data-action="pagar-divida" data-id="${c.id}" class="text-green-500 hover:text-green-600" title="Pagar Dívida">💰</button>` : ''}
                         <button data-action="edit-cliente" data-id="${c.id}" class="text-blue-500 hover:text-blue-600">✏️</button>
                         <button data-action="delete-cliente" data-id="${c.id}" class="text-red-500 hover:text-red-600">🗑️</button>
@@ -2328,7 +2331,7 @@
         </div>
 
         <div class="border rounded-lg p-4">
-          <<h3 class="font-bold mb-3 text-red-700">📦 Detalhamento de Custos</h3>
+          <h3 class="font-bold mb-3 text-red-700">📦 Detalhamento de Custos</h3>
           ${state.produtos.length > 0 ? `
             <div class="space-y-4">
               ${state.produtos.map(p => {
@@ -2541,7 +2544,16 @@
           <!-- Gerenciar Clientes -->
           <div class="bg-gradient-to-r from-purple-600 to-pink-600 text-white p-6 rounded-lg mb-6">
             <h3 class="text-xl font-bold mb-2">👥 Gerenciar Clientes</h3>
-            <p class="opacity-90">Controle todas as contas do Totaliz</p>
+            <p class="opacity-90 mb-3">Controle todas as contas do Totaliz</p>
+            <div class="bg-white/20 p-4 rounded-lg text-sm">
+              <p class="font-semibold mb-2">💡 Sobre o Banner de Trial:</p>
+              <ul class="space-y-1 opacity-90">
+                <li>• O banner aparece <strong>automaticamente</strong> para clientes em trial</li>
+                <li>• Mostra quantos dias faltam e botão para assinar</li>
+                <li>• Para <strong>ocultar</strong>: marque o cliente como "✅ Pago"</li>
+                <li>• Para <strong>reativar</strong>: marque como "⏳ Trial"</li>
+              </ul>
+            </div>
           </div>
           
           <div class="mb-6">
@@ -2559,11 +2571,14 @@
                     <th class="px-4 py-3 text-left">Nome Empresa</th>
                     <th class="px-4 py-3 text-left">Status</th>
                     <th class="px-4 py-3 text-left">Trial</th>
+                    <th class="px-4 py-3 text-left">Banner</th>
                     <th class="px-4 py-3 text-left">Ações</th>
                   </tr>
                 </thead>
                 <tbody>
-                  ${state.todosUsuarios.map(user => `
+                  ${state.todosUsuarios.map(user => {
+                    const mostrarBanner = !user.assinaturaPaga && user.diasRestantes !== null && user.diasRestantes >= 0;
+                    return `
                     <tr class="border-b hover:bg-gray-50">
                       <td class="px-4 py-3">${user.email}</td>
                       <td class="px-4 py-3">${user.nomeEmpresa || 'Não configurado'}</td>
@@ -2573,12 +2588,18 @@
                       </td>
                       <td class="px-4 py-3 text-sm text-gray-600">${user.diasRestantes !== null ? `${user.diasRestantes} dias` : '-'}</td>
                       <td class="px-4 py-3">
-                        <div class="flex gap-2">
+                        <span class="${mostrarBanner ? 'text-green-600' : 'text-gray-400'}">
+                          ${mostrarBanner ? '👁️ Visível' : '🚫 Oculto'}
+                        </span>
+                      </td>
+                      <td class="px-4 py-3">
+                        <div class="flex gap-2 flex-wrap">
                           <button 
                             data-action="admin-toggle-pago" 
                             data-user-id="${user.userId}"
                             data-current="${user.assinaturaPaga}"
                             class="text-xs px-3 py-1 rounded ${user.assinaturaPaga ? 'bg-gray-500' : 'bg-green-500'} text-white hover:opacity-80"
+                            title="${user.assinaturaPaga ? 'Voltar para Trial' : 'Marcar como Pago'}"
                           >
                             ${user.assinaturaPaga ? '⏳ Trial' : '✅ Pago'}
                           </button>
@@ -2587,13 +2608,14 @@
                             data-user-id="${user.userId}"
                             data-current="${user.contaBloqueada}"
                             class="text-xs px-3 py-1 rounded ${user.contaBloqueada ? 'bg-green-500' : 'bg-red-500'} text-white hover:opacity-80"
+                            title="${user.contaBloqueada ? 'Desbloquear conta' : 'Bloquear conta'}"
                           >
                             ${user.contaBloqueada ? '🔓 Ativar' : '🔒 Bloquear'}
                           </button>
                         </div>
                       </td>
                     </tr>
-                  `).join('')}
+                  `}).join('')}
                 </tbody>
               </table>
             </div>
@@ -3098,11 +3120,118 @@
             </div>
           </div>
         `;
+      } else if (state.modalType === 'detalhes-cliente') {
+        const c = state.editingId ? state.clientes.find(x => x.id == state.editingId) : null;
+        const vendasCliente = state.vendas.filter(v => v.clienteId == state.editingId).sort((a, b) => new Date(b.data) - new Date(a.data));
+        
+        const totalComprado = vendasCliente.reduce((sum, v) => sum + v.total, 0);
+        const totalPago = vendasCliente.filter(v => v.formaPagamento !== 'prazo').reduce((sum, v) => sum + v.total, 0);
+        const totalPrazo = vendasCliente.filter(v => v.formaPagamento === 'prazo').reduce((sum, v) => sum + v.total, 0);
+        
+        modalContent = `
+          <h3 class="text-xl font-bold mb-4">👁️ Detalhes do Cliente</h3>
+          <div class="space-y-4 max-h-[70vh] overflow-y-auto">
+            <!-- Informações do Cliente -->
+            <div class="bg-indigo-50 p-4 rounded border border-indigo-200">
+              <h4 class="font-bold text-lg mb-2">${c?.nome}</h4>
+              <p class="text-sm text-gray-600">📱 ${c?.telefone}</p>
+              <p class="text-sm font-medium mt-2 ${c.saldo < 0 ? 'text-red-600' : c.saldo > 0 ? 'text-green-600' : ''}">
+                Saldo Atual: R$ ${Math.abs(c?.saldo || 0).toFixed(2)} ${c.saldo < 0 ? '(devendo)' : c.saldo > 0 ? '(a receber)' : ''}
+              </p>
+            </div>
+            
+            <!-- Resumo Financeiro -->
+            <div class="grid grid-cols-3 gap-2">
+              <div class="bg-blue-50 p-3 rounded text-center border border-blue-200">
+                <p class="text-xs text-gray-600">Total Comprado</p>
+                <p class="font-bold text-blue-600">R$ ${totalComprado.toFixed(2)}</p>
+              </div>
+              <div class="bg-green-50 p-3 rounded text-center border border-green-200">
+                <p class="text-xs text-gray-600">Total Pago</p>
+                <p class="font-bold text-green-600">R$ ${totalPago.toFixed(2)}</p>
+              </div>
+              <div class="bg-red-50 p-3 rounded text-center border border-red-200">
+                <p class="text-xs text-gray-600">Total a Prazo</p>
+                <p class="font-bold text-red-600">R$ ${totalPrazo.toFixed(2)}</p>
+              </div>
+            </div>
+            
+            <!-- Histórico de Compras -->
+            <div>
+              <h4 class="font-bold mb-2">📋 Histórico de Compras (${vendasCliente.length})</h4>
+              ${vendasCliente.length > 0 ? `
+                <div class="space-y-2">
+                  ${vendasCliente.map(v => {
+                    const dataVenda = new Date(v.data);
+                    const dataFormatada = dataVenda.toLocaleDateString('pt-BR');
+                    const horaFormatada = dataVenda.toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'});
+                    
+                    return `
+                      <div class="border rounded p-3 bg-gray-50">
+                        <div class="flex justify-between items-start mb-2">
+                          <div>
+                            <p class="text-sm font-medium">${dataFormatada} às ${horaFormatada}</p>
+                            <p class="text-xs text-gray-500">Venda #${v.id}</p>
+                          </div>
+                          <div class="text-right">
+                            <p class="font-bold text-lg">R$ ${v.total.toFixed(2)}</p>
+                            <span class="text-xs px-2 py-1 rounded ${
+                              v.formaPagamento === 'prazo' ? 'bg-red-100 text-red-700' :
+                              v.formaPagamento === 'dinheiro' ? 'bg-green-100 text-green-700' :
+                              v.formaPagamento === 'pix' ? 'bg-blue-100 text-blue-700' :
+                              'bg-purple-100 text-purple-700'
+                            }">
+                              ${v.formaPagamento === 'prazo' ? '🕐 A Prazo' : 
+                                v.formaPagamento === 'dinheiro' ? '💵 Dinheiro' :
+                                v.formaPagamento === 'pix' ? '📱 Pix' : '💳 Cartão'}
+                            </span>
+                          </div>
+                        </div>
+                        <div class="border-t pt-2 mt-2">
+                          <p class="text-xs font-medium text-gray-600 mb-1">Produtos:</p>
+                          ${v.itens.map(item => `
+                            <p class="text-xs text-gray-600">• ${item.produtoNome} (${item.quantidade}x) - R$ ${(item.quantidade * item.precoUnitario).toFixed(2)}</p>
+                          `).join('')}
+                        </div>
+                      </div>
+                    `;
+                  }).join('')}
+                </div>
+              ` : `
+                <div class="text-center py-8 text-gray-500">
+                  <div class="text-4xl mb-2">🛒</div>
+                  <p class="text-sm">Nenhuma compra registrada</p>
+                </div>
+              `}
+            </div>
+            
+            <!-- Justificativa do Saldo -->
+            ${c.saldo !== 0 ? `
+              <div class="bg-yellow-50 p-4 rounded border border-yellow-300">
+                <h4 class="font-bold text-sm mb-2">💡 Justificativa do Saldo:</h4>
+                ${c.saldo < 0 ? `
+                  <p class="text-sm text-gray-700">
+                    O cliente deve <strong>R$ ${Math.abs(c.saldo).toFixed(2)}</strong> porque comprou 
+                    <strong>R$ ${totalPrazo.toFixed(2)}</strong> a prazo e ainda não pagou tudo.
+                  </p>
+                ` : `
+                  <p class="text-sm text-gray-700">
+                    O cliente tem <strong>R$ ${c.saldo.toFixed(2)}</strong> de crédito (pagou a mais ou adiantamento).
+                  </p>
+                `}
+              </div>
+            ` : ''}
+            
+            <div class="flex gap-2">
+              <button data-action="close-modal" class="flex-1 bg-indigo-500 text-white rounded py-2 hover:bg-indigo-600">Fechar</button>
+            </div>
+          </div>
+        `;
       }
       
       return `
         <div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div class="bg-white rounded-lg p-6 max-w-md w-full">
+          <div class="bg-white rounded-lg p-6 ${state.modalType === 'detalhes-cliente' ? 'max-w-3xl' : 'max-w-md'} w-full">
             ${modalContent}
           </div>
         </div>
@@ -3220,6 +3349,15 @@
         btn.addEventListener('click', (e) => {
           state.editingId = e.currentTarget.dataset.id;
           state.modalType = 'pagamento';
+          state.showModal = true;
+          render();
+        });
+      });
+
+      document.querySelectorAll('[data-action="ver-detalhes-cliente"]').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          state.editingId = e.currentTarget.dataset.id;
+          state.modalType = 'detalhes-cliente';
           state.showModal = true;
           render();
         });
@@ -4063,15 +4201,28 @@
               data: new Date().toISOString(),
               clienteId: cliId ? parseInt(cliId) : null,
               clienteNome: cliente ? cliente.nome : 'Venda Avulsa',
-              itens: Object.values(itensAgrupados),
+              itens: Object.values(itensAgrupados).map(item => {
+                const p = state.produtos.find(pr => pr.id == item.produtoId);
+                return {
+                  ...item,
+                  produtoNome: p ? p.nome : 'Produto'
+                };
+              }),
               subtotal,
               desconto,
               creditoUsado,
+              total: valorFinal, // ← ADICIONADO
               valorFinal,
               formaPagamento: pagamento
             };
 
-            await saveToFirebase('vendas', novaVenda.id, novaVenda);
+            const vendaSalva = await saveToFirebase('vendas', novaVenda.id, novaVenda);
+            
+            if (!vendaSalva) {
+              alert('⚠️ Erro ao salvar venda! Verifique as Regras do Firestore.');
+              return;
+            }
+            
             state.vendas.push(novaVenda);
 
             if (pagamento !== 'fiado') {
