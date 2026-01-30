@@ -926,6 +926,49 @@
         ${state.showModal ? renderModal() : ''}
         ${state.showSupportModal ? renderSupportModal() : ''}
         
+        <!-- Rodapé com Links de Documentação -->
+        <footer class="bg-gray-800 text-white py-8 mt-12">
+          <div class="max-w-7xl mx-auto px-4">
+            <div class="grid md:grid-cols-3 gap-8 mb-6">
+              <!-- Coluna 1: Sobre -->
+              <div>
+                <h3 class="text-lg font-bold mb-3">📚 Totaliz</h3>
+                <p class="text-sm text-gray-300">
+                  Sistema completo de gestão empresarial para pequenos e médios negócios.
+                </p>
+              </div>
+              
+              <!-- Coluna 2: Documentação -->
+              <div>
+                <h3 class="text-lg font-bold mb-3">📄 Documentação</h3>
+                <ul class="space-y-2 text-sm">
+                  <li><a href="politica-privacidade.html" target="_blank" class="text-gray-300 hover:text-white transition">🔒 Política de Privacidade</a></li>
+                  <li><a href="termos-uso.html" target="_blank" class="text-gray-300 hover:text-white transition">📜 Termos de Uso</a></li>
+                  <li><a href="termos-servico.html" target="_blank" class="text-gray-300 hover:text-white transition">🤝 Termos de Serviço</a></li>
+                  <li><a href="faq.html" target="_blank" class="text-gray-300 hover:text-white transition">❓ Perguntas Frequentes</a></li>
+                  <li><a href="leia-me.html" target="_blank" class="text-gray-300 hover:text-white transition">📖 Guia de Uso</a></li>
+                </ul>
+              </div>
+              
+              <!-- Coluna 3: Contato -->
+              <div>
+                <h3 class="text-lg font-bold mb-3">💬 Contato</h3>
+                <ul class="space-y-2 text-sm text-gray-300">
+                  <li>📧 <a href="mailto:contato@totaliz.com.br" class="hover:text-white transition">contato@totaliz.com.br</a></li>
+                  <li>📱 <a href="https://wa.me/5544991522243" target="_blank" class="hover:text-white transition">(44) 99152-2243</a></li>
+                  <li>🕐 Seg-Sex: 8h às 18h</li>
+                </ul>
+              </div>
+            </div>
+            
+            <!-- Copyright -->
+            <div class="border-t border-gray-700 pt-6 text-center text-sm text-gray-400">
+              <p>&copy; 2026 Totaliz - Sistema de Gestão Empresarial</p>
+              <p class="mt-1">Desenvolvido por Rafael Victor de Barros | Maringá/PR</p>
+            </div>
+          </div>
+        </footer>
+        
         <!-- Botão Flutuante WhatsApp -->
         <a 
           href="https://wa.me/5544991522243?text=Olá!%20Preciso%20de%20ajuda%20com%20o%20Totaliz" 

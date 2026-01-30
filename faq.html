@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FAQ - Perguntas Frequentes - Totaliz</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    function toggleFaq(id) {
+      const answer = document.getElementById(id);
+      const icon = document.getElementById(id + '-icon');
+      if (answer.classList.contains('hidden')) {
+        answer.classList.remove('hidden');
+        icon.textContent = '−';
+      } else {
+        answer.classList.add('hidden');
+        icon.textContent = '+';
+      }
+    }
+  </script>
+</head>
+<body class="bg-gray-50">
+  <div class="max-w-4xl mx-auto px-4 py-12">
+    <div class="bg-white rounded-lg shadow-lg p-8">
+      
+      <!-- Cabeçalho -->
+      <div class="border-b pb-6 mb-8">
+        <h1 class="text-3xl font-bold text-gray-900 mb-2">Perguntas Frequentes (FAQ)</h1>
+        <p class="text-gray-600">Totaliz - Sistema de Gestão Empresarial</p>
+        <p class="text-sm text-gray-500 mt-2">Encontre respostas rápidas para as dúvidas mais comuns</p>
+      </div>
+
+      <!-- Seção: Geral -->
+      <section class="mb-8">
+        <h2 class="text-2xl font-semibold text-indigo-600 mb-4">📌 Geral</h2>
+        
+        <div class="space-y-3">
+          <!-- FAQ 1 -->
+          <div class="border border-gray-200 rounded-lg">
+            <button 
+              onclick="toggleFaq('faq1')" 
+              class="w-full px-6 py-4 text-left flex justify-between items-center hover:bg-gray-50 transition"
+            >
+              <span class="font-semibold text-gray-800">O que é o Totaliz?</span>
+              <span id="faq1-icon" class="text-2xl text-indigo-600 font-bold">+</span>
+            </button>
+            <div id="faq1" class="hidden px-6 pb-4 text-gray-700">
+              <p>
+                O <strong>Totaliz</strong> é um sistema completo de gestão empresarial desenvolvido especialmente 
+                para pequenas e médias empresas. Ele oferece controle de clientes, estoque, vendas, caixa, 
+                finanças e relatórios gerenciais, tudo em um só lugar e acessível pela internet.
+              </p>
+              <p class="mt-2">
+                Com personalização white-label, você pode usar o sistema com o nome e logo da sua empresa!
+              </p>
+            </div>
+          </div>
+
+          <!-- FAQ 2 -->
+          <div class="border border-gray-200 rounded-lg">
+            <button 
+              onclick="toggleFaq('faq2')" 
+              class="w-full px-6 py-4 text-left flex justify-between items-center hover:bg-gray-50 transition"
+            >
+              <span class="font-semibold text-gray-800">Para quem o Totaliz é indicado?</span>
+              <span id="faq2-icon" class="text-2xl text-indigo-600 font-bold">+</span>
+            </button>
+            <div id="faq2" class="hidden px-6 pb-4 text-gray-700">
+              <p>O Totaliz é ideal para:</p>
+              <ul class="list-disc list-inside mt-2 space-y-1">
+                <li>Pequenas indústrias e produção artesanal</li>
+                <li>Comércio varejista</li>
+                <li>Bares e restaurantes</li>
+                <li>Sorveterias e confeitarias</li>
+                <li>Prestadores de serviço</li>
+                <li>Qualquer negócio que precise controlar vendas, estoque e caixa</li>
+              </ul>
+            </div>
+          </div>
+
+          <!-- FAQ 3 -->
+          <div class="border border-gray-200 rounded-lg">
+            <button 
+              onclick="toggleFaq('faq3')" 
+              class="w-full px-6 py-4 text-left flex justify-between items-center hover:bg-gray-50 transition"
+            >
+              <span class="font-semibold text-gray-800">Preciso instalar algum programa?</span>
+              <span id="faq3-icon" class="text-2xl text-indigo-600 font-bold">+</span>
+            </button>
+            <div id="faq3" class="hidden px-6 pb-4 text-gray-700">
+              <p>
+                <strong>Não!</strong> O Totaliz funciona 100% online através do navegador (Chrome, Firefox, Safari, Edge). 
+                Você pode acessar de qualquer computador, tablet ou celular com internet, sem precisar instalar nada.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Seção: Trial e Planos -->
+      <section class="mb-8">
+        <h2 class="text-2xl font-semibold text-indigo-600 mb-4">💰 Trial e Planos</h2>
+        
+        <div class="space-y-3">
+          <!-- FAQ 4 -->
+          <div class="border border-gray-200 rounded-lg">
+            <button 
+              onclick="toggleFaq('faq4')" 
+              class="w-full px-6 py-4 text-left flex justify-between items-center hover:bg-gray-50 transition"
+            >
+              <span class="font-semibold text-gray-800">Posso testar antes de pagar?</span>
+              <span id="faq4-icon" class="text-2xl text-indigo-600 font-bold">+</span>
+            </button>
+            <div id="faq4" class="hidden px-6 pb-4 text-gray-700">
+              <p>
+                <strong>Sim!</strong> Oferecemos <strong>30 dias de teste gratuito</strong> com acesso completo 
+                a todas as funcionalidades. Você pode cadastrar produtos, clientes, fazer vendas e explorar tudo 
+                sem compromisso. Não pedimos cartão de crédito no trial!
+              </p>
+            </div>
+          </div>
+
+          <!-- FAQ 5 -->
+          <div class="border border-gray-200 rounded-lg">
+            <button 
+              onclick="toggleFaq('faq5')" 
+              class="w-full px-6 py-4 text-left flex justify-between items-center hover:bg-gray-50 transition"
+            >
+              <span class="font-semibold text-gray-800">Quais são os planos e preços?</span>
+              <span id="faq5-icon" class="text-2xl text-indigo-600 font-bold">+</span>
+            </button>
+            <div id="faq5" class="hidden px-6 pb-4 text-gray-700">
+              <p class="mb-3">Oferecemos 2 planos:</p>
+              <div class="bg-indigo-50 rounded-lg p-4 space-y-3">
+                <div>
+                  <p class="font-bold text-indigo-700">💳 Plano Mensal</p>
+                  <p>R$ 29,90/mês - Renovação automática mensal</p>
+                </div>
+                <div>
+                  <p class="font-bold text-indigo-700">📅 Plano Anual</p>
+                  <p>R$ 239,90/ano - Economia de 33% (mais de 2 meses grátis!)</p>
+                </div>
+              </div>
+              <p class="mt-3 text-sm text-gray-600">
+                Todos os planos incluem TODAS as funcionalidades, sem limites de usuários, vendas ou produtos.
+              </p>
+            </div>
+          </div>
+
+          <!-- FAQ 6 -->
+          <div class="border border-gray-200 rounded-lg">
+            <button 
+              onclick="toggleFaq('faq6')" 
+              class="w-full px-6 py-4 text-left flex justify-between items-center hover:bg-gray-50 transition"
+            >
+              <span class="font-semibold text-gray-800">Como faço o pagamento?</span>
+              <span id="faq6-icon" class="text-2xl text-indigo-600 font-bold">+</span>
+            </button>
+            <div id="faq6" class="hidden px-6 pb-4 text-gray-700">
+              <p class="mb-2">Aceitamos pagamentos via <strong>Stripe</strong>:</p>
+              <ul class="list-disc list-inside space-y-1">
+                <li><strong>Cartão de crédito</strong> (renovação automática)</li>
+                <li><strong>Pix</strong> (para plano anual)</li>
+              </ul>
+              <p class="mt-3">
+                O pagamento é <strong>100% seguro</strong> e processado pela Stripe, uma das maiores 
+                plataformas de pagamento do mundo.
+              </p>
+            </div>
+          </div>
+
+          <!-- FAQ 7 -->
+          <div class="border border-gray-200 rounded-lg">
+            <button 
+              onclick="toggleFaq('faq7')" 
+              class="w-full px-6 py-4 text-left flex justify-between items-center hover:bg-gray-50 transition"
+            >
+              <span class="font-semibold text-gray-800">Posso cancelar quando quiser?</span>
+              <span id="faq7-icon" class="text-2xl text-indigo-600 font-bold">+</span>
+            </button>
+            <div id="faq7" class="hidden px-6 pb-4 text-gray-700">
+              <p>
+                <strong>Sim!</strong> Você pode cancelar sua assinatura a qualquer momento, sem multa 
+                ou burocracia. O cancelamento terá efeito ao final do período já pago (mês ou ano).
+              </p>
+              <p class="mt-2 text-sm text-gray-600">
+                <strong>Direito de arrependimento:</strong> Se cancelar nos primeiros 7 dias após o 
+                pagamento, você recebe reembolso integral.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Seção: Funcionalidades -->
+      <section class="mb-8">
+        <h2 class="text-2xl font-semibold text-indigo-600 mb-4">⚙️ Funcionalidades</h2>
+        
+        <div class="space-y-3">
+          <!-- FAQ 8 -->
+          <div class="border border-gray-200 rounded-lg">
+            <button 
+              onclick="toggleFaq('faq8')" 
+              class="w-full px-6 py-4 text-left flex justify-between items-center hover:bg-gray-50 transition"
+            >
+              <span class="font-semibold text-gray-800">O que posso fazer no Totaliz?</span>
+              <span id="faq8-icon" class="text-2xl text-indigo-600 font-bold">+</span>
+            </button>
+            <div id="faq8" class="hidden px-6 pb-4 text-gray-700">
+              <p class="mb-2">O Totaliz oferece:</p>
+              <ul class="list-disc list-inside space-y-1">
+                <li>📊 <strong>Dashboard</strong> com indicadores de desempenho</li>
+                <li>👥 <strong>Gestão de clientes</strong> (cadastro, saldo, histórico)</li>
+                <li>📦 <strong>Controle de estoque</strong> e produtos</li>
+                <li>🧾 <strong>Receitas</strong> (fórmulas de produção)</li>
+                <li>💰 <strong>Vendas</strong> (registrar, consultar, emitir comprovantes)</li>
+                <li>🏦 <strong>Fluxo de caixa</strong> (abertura, fechamento, sangria, reforço)</li>
+                <li>💸 <strong>Finanças</strong> (despesas recorrentes, receitas)</li>
+                <li>📈 <strong>Relatórios</strong> gerenciais</li>
+                <li>🎨 <strong>White-label</strong> (personalize com nome e logo da sua empresa)</li>
+              </ul>
+            </div>
+          </div>
+
+          <!-- FAQ 9 -->
+          <div class="border border-gray-200 rounded-lg">
+            <button 
+              onclick="toggleFaq('faq9')" 
+              class="w-full px-6 py-4 text-left flex justify-between items-center hover:bg-gray-50 transition"
+            >
+              <span class="font-semibold text-gray-800">Posso personalizar com meu logo?</span>
+              <span id="faq9-icon" class="text-2xl text-indigo-600 font-bold">+</span>
+            </button>
+            <div id="faq9" class="hidden px-6 pb-4 text-gray-700">
+              <p>
+                <strong>Sim!</strong> O Totaliz possui <strong>personalização white-label</strong>. 
+                Você pode alterar o nome da empresa e fazer upload do seu logo. Assim, o sistema 
+                fica com a cara do seu negócio!
+              </p>
+            </div>
+          </div>
+
+          <!-- FAQ 10 -->
+          <div class="border border-gray-200 rounded-lg">
+            <button 
+              onclick="toggleFaq('faq10')" 
+              class="w-full px-6 py-4 text-left flex justify-between items-center hover:bg-gray-50 transition"
+            >
+              <span class="font-semibold text-gray-800">Posso acessar de onde estiver?</span>
+              <span id="faq10-icon" class="text-2xl text-indigo-600 font-bold">+</span>
+            </button>
+            <div id="faq10" class="hidden px-6 pb-4 text-gray-700">
+              <p>
+                <strong>Sim!</strong> Como o Totaliz é 100% online, você pode acessar de qualquer 
+                lugar: computador, tablet ou celular, basta ter internet. Seus dados ficam salvos 
+                na nuvem e sincronizam automaticamente.
+              </p>
+            </div>
+          </div>
+
+          <!-- FAQ 11 -->
+          <div class="border border-gray-200 rounded-lg">
+            <button 
+              onclick="toggleFaq('faq11')" 
+              class="w-full px-6 py-4 text-left flex justify-between items-center hover:bg-gray-50 transition"
+            >
+              <span class="font-semibold text-gray-800">Posso exportar meus dados?</span>
+              <span id="faq11-icon" class="text-2xl text-indigo-600 font-bold">+</span>
+            </button>
+            <div id="faq11" class="hidden px-6 pb-4 text-gray-700">
+              <p>
+                <strong>Sim!</strong> Você pode exportar todos os seus dados a qualquer momento. 
+                Os dados são seus e você tem total controle sobre eles.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Seção: Segurança -->
+      <section class="mb-8">
+        <h2 class="text-2xl font-semibold text-indigo-600 mb-4">🔒 Segurança e Dados</h2>
+        
+        <div class="space-y-3">
+          <!-- FAQ 12 -->
+          <div class="border border-gray-200 rounded-lg">
+            <button 
+              onclick="toggleFaq('faq12')" 
+              class="w-full px-6 py-4 text-left flex justify-between items-center hover:bg-gray-50 transition"
+            >
+              <span class="font-semibold text-gray-800">Meus dados estão seguros?</span>
+              <span id="faq12-icon" class="text-2xl text-indigo-600 font-bold">+</span>
+            </button>
+            <div id="faq12" class="hidden px-6 pb-4 text-gray-700">
+              <p class="mb-2"><strong>Sim!</strong> A segurança é nossa prioridade:</p>
+              <ul class="list-disc list-inside space-y-1">
+                <li>🔐 Criptografia de dados (HTTPS/TLS)</li>
+                <li>🔑 Senhas criptografadas</li>
+                <li>☁️ Hospedagem segura no Google Cloud (Firebase)</li>
+                <li>💾 Backups automáticos diários</li>
+                <li>📜 Conformidade com LGPD</li>
+              </ul>
+            </div>
+          </div>
+
+          <!-- FAQ 13 -->
+          <div class="border border-gray-200 rounded-lg">
+            <button 
+              onclick="toggleFaq('faq13')" 
+              class="w-full px-6 py-4 text-left flex justify-between items-center hover:bg-gray-50 transition"
+            >
+              <span class="font-semibold text-gray-800">O sistema faz backup?</span>
+              <span id="faq13-icon" class="text-2xl text-indigo-600 font-bold">+</span>
+            </button>
+            <div id="faq13" class="hidden px-6 pb-4 text-gray-700">
+              <p>
+                <strong>Sim!</strong> Fazemos backups automáticos diários de todos os dados. 
+                Mesmo assim, recomendamos que você também exporte seus dados periodicamente 
+                como medida adicional de segurança.
+              </p>
+            </div>
+          </div>
+
+          <!-- FAQ 14 -->
+          <div class="border border-gray-200 rounded-lg">
+            <button 
+              onclick="toggleFaq('faq14')" 
+              class="w-full px-6 py-4 text-left flex justify-between items-center hover:bg-gray-50 transition"
+            >
+              <span class="font-semibold text-gray-800">O que acontece se eu cancelar?</span>
+              <span id="faq14-icon" class="text-2xl text-indigo-600 font-bold">+</span>
+            </button>
+            <div id="faq14" class="hidden px-6 pb-4 text-gray-700">
+              <p>
+                Após cancelamento, você terá <strong>90 dias</strong> para acessar seus dados em 
+                modo somente leitura e exportá-los. Após esse período, todos os dados serão 
+                permanentemente excluídos de nossos servidores.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Seção: Suporte -->
+      <section class="mb-8">
+        <h2 class="text-2xl font-semibold text-indigo-600 mb-4">💬 Suporte</h2>
+        
+        <div class="space-y-3">
+          <!-- FAQ 15 -->
+          <div class="border border-gray-200 rounded-lg">
+            <button 
+              onclick="toggleFaq('faq15')" 
+              class="w-full px-6 py-4 text-left flex justify-between items-center hover:bg-gray-50 transition"
+            >
+              <span class="font-semibold text-gray-800">Como funciona o suporte técnico?</span>
+              <span id="faq15-icon" class="text-2xl text-indigo-600 font-bold">+</span>
+            </button>
+            <div id="faq15" class="hidden px-6 pb-4 text-gray-700">
+              <p class="mb-2">Oferecemos suporte via:</p>
+              <ul class="list-disc list-inside space-y-1">
+                <li>📱 <strong>WhatsApp:</strong> (44) 99152-2243</li>
+                <li>📧 <strong>E-mail:</strong> contato@totaliz.com.br</li>
+              </ul>
+              <p class="mt-3">
+                <strong>Horário:</strong> Segunda a sexta, 8h às 18h (horário de Brasília)<br>
+                <strong>Prazo de resposta:</strong> Até 24 horas úteis
+              </p>
+            </div>
+          </div>
+
+          <!-- FAQ 16 -->
+          <div class="border border-gray-200 rounded-lg">
+            <button 
+              onclick="toggleFaq('faq16')" 
+              class="w-full px-6 py-4 text-left flex justify-between items-center hover:bg-gray-50 transition"
+            >
+              <span class="font-semibold text-gray-800">Vocês oferecem treinamento?</span>
+              <span id="faq16-icon" class="text-2xl text-indigo-600 font-bold">+</span>
+            </button>
+            <div id="faq16" class="hidden px-6 pb-4 text-gray-700">
+              <p>
+                O Totaliz foi desenvolvido para ser <strong>intuitivo e fácil de usar</strong>. 
+                Caso tenha dificuldade, nossa equipe de suporte está disponível para orientá-lo 
+                via WhatsApp ou e-mail. Também planejamos adicionar vídeos tutoriais em breve!
+              </p>
+            </div>
+          </div>
+
+          <!-- FAQ 17 -->
+          <div class="border border-gray-200 rounded-lg">
+            <button 
+              onclick="toggleFaq('faq17')" 
+              class="w-full px-6 py-4 text-left flex justify-between items-center hover:bg-gray-50 transition"
+            >
+              <span class="font-semibold text-gray-800">Não encontrei minha dúvida aqui, e agora?</span>
+              <span id="faq17-icon" class="text-2xl text-indigo-600 font-bold">+</span>
+            </button>
+            <div id="faq17" class="hidden px-6 pb-4 text-gray-700">
+              <p class="mb-3">
+                Sem problemas! Entre em contato conosco:
+              </p>
+              <div class="bg-indigo-50 border border-indigo-200 rounded-lg p-4">
+                <p class="text-gray-700 mb-1"><strong>📱 WhatsApp:</strong> <a href="https://wa.me/5544991522243" class="text-indigo-600 hover:underline">(44) 99152-2243</a></p>
+                <p class="text-gray-700"><strong>📧 E-mail:</strong> <a href="mailto:contato@totaliz.com.br" class="text-indigo-600 hover:underline">contato@totaliz.com.br</a></p>
+              </div>
+              <p class="mt-3 text-sm text-gray-600">
+                Respondemos em até 24 horas úteis! 😊
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Rodapé -->
+      <div class="border-t pt-6 mt-8 text-center">
+        <p class="text-gray-700 mb-4">
+          <strong>Ainda tem dúvidas?</strong> Estamos aqui para ajudar!
+        </p>
+        <div class="flex justify-center gap-4">
+          <a 
+            href="https://wa.me/5544991522243" 
+            target="_blank"
+            class="bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700 transition font-semibold"
+          >
+            💬 Falar no WhatsApp
+          </a>
+          <a 
+            href="mailto:contato@totaliz.com.br" 
+            class="bg-indigo-600 text-white px-6 py-3 rounded-lg hover:bg-indigo-700 transition font-semibold"
+          >
+            📧 Enviar E-mail
+          </a>
+        </div>
+        <p class="text-sm text-gray-500 mt-6">&copy; 2026 Totaliz - Todos os direitos reservados</p>
+      </div>
+
+    </div>
+  </div>
+</body>
+</html>
