@@ -11,7 +11,7 @@
   <div id="root"></div>
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-    import { getFirestore, collection, doc, setDoc, getDocs, deleteDoc, query, where } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+    import { getFirestore, collection, doc, getDoc, setDoc, updateDoc, getDocs, deleteDoc, query, where } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
     import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
     const firebaseConfig = {
@@ -26,6 +26,9 @@
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
     const auth = getAuth(app);
+
+    // ===== CONFIGURAÇÃO ADMIN =====
+    const ADMIN_EMAIL = 'rvbarros17@gmail.com'; // Rafa é o admin!
 
     let state = {
       user: null,
@@ -49,7 +52,12 @@
       trialStartDate: null,
       showTrialBanner: false,
       showSupportModal: false,
-      nomeEmpresa: 'Minha Empresa' // Nome personalizável da empresa
+      nomeEmpresa: 'Minha Empresa', // Nome personalizável da empresa
+      assinaturaPaga: false, // Se cliente já pagou (você marca manualmente)
+      contaBloqueada: false, // Se conta está bloqueada (modo visualização)
+      isAdmin: false, // Se usuário logado é admin
+      todosUsuarios: [], // Lista de todos os usuários (só admin vê)
+      codigosGerados: [] // Códigos gerados recentemente
     };
 
 
@@ -181,6 +189,13 @@
         });
       }
 
+    // Verificar se é admin
+    state.isAdmin = (user.email === ADMIN_EMAIL);
+    
+    if (state.isAdmin) {
+      console.log('👑 Admin logado!');
+    }
+    
     loadAllData();
       } else {
         state.user = null;
@@ -220,6 +235,9 @@
     }
     
     async function handleActivation(code, email, password, confirmPassword) {
+      // Normalizar código (uppercase, remover espaços)
+      code = code.trim().toUpperCase();
+      
       // Validações
       if (!code || code.length < 9) {
         return alert('❌ Código inválido! Deve ter o formato: ABC-123-XYZ');
@@ -238,17 +256,34 @@
       }
       
       try {
+        console.log('🔍 Procurando código:', code);
+        
         // Verificar se código existe e é válido
         const codigosRef = collection(db, 'codigosAtivacao');
         const q = query(codigosRef, where("codigo", "==", code));
         const querySnapshot = await getDocs(q);
         
+        console.log('📋 Códigos encontrados:', querySnapshot.size);
+        
         if (querySnapshot.empty) {
-          return alert('❌ Código não encontrado! Verifique se digitou corretamente.');
+          // Tentar buscar sem o where para ver se tem algum código
+          const allCodigosSnapshot = await getDocs(codigosRef);
+          console.log('📦 Total de códigos no banco:', allCodigosSnapshot.size);
+          
+          if (allCodigosSnapshot.size > 0) {
+            console.log('Primeiros 3 códigos no banco:');
+            allCodigosSnapshot.docs.slice(0, 3).forEach(doc => {
+              console.log('  -', doc.data().codigo);
+            });
+          }
+          
+          return alert('❌ Código não encontrado!\n\nVerifique:\n• Se digitou corretamente (ABC-123-XYZ)\n• Maiúsculas e minúsculas\n• Se não há espaços extras');
         }
         
         const codigoDoc = querySnapshot.docs[0];
         const codigoData = codigoDoc.data();
+        
+        console.log('✅ Código encontrado:', codigoData);
         
         // Verificar se já foi usado
         if (codigoData.usado) {
@@ -320,7 +355,8 @@
         
         // Calcular se deve mostrar banner
         const daysRemaining = getTrialDaysRemaining();
-        state.showTrialBanner = daysRemaining !== null && daysRemaining >= 0;
+        // Só mostra banner se NÃO tiver assinatura paga
+        state.showTrialBanner = !state.assinaturaPaga && daysRemaining !== null && daysRemaining >= 0;
       } catch (e) {
         console.error('Erro ao verificar trial:', e);
       }
@@ -432,6 +468,181 @@
       }
     }
 
+    // ===== FUNÇÕES ADMIN =====
+    
+    async function loadAllUsers() {
+      if (!state.isAdmin) return;
+      
+      try {
+        // Carregar todas as configurações
+        const configsSnapshot = await getDocs(collection(db, 'configuracoes'));
+        const users = [];
+        
+        for (const doc of configsSnapshot.docs) {
+          const config = doc.data();
+          
+          // Carregar userSettings para pegar trial
+          const settingsSnapshot = await getDocs(
+            query(collection(db, 'userSettings'), where("userId", "==", config.userId))
+          );
+          
+          let diasRestantes = null;
+          if (!settingsSnapshot.empty) {
+            const settings = settingsSnapshot.docs[0].data();
+            if (settings.trialStartDate) {
+              const startDate = new Date(settings.trialStartDate);
+              const today = new Date();
+              const diffDays = Math.floor((today - startDate) / (1000 * 60 * 60 * 24));
+              diasRestantes = 30 - diffDays;
+            }
+          }
+          
+          users.push({
+            userId: config.userId,
+            email: config.userId, // Firebase usa UID, precisaria buscar o email
+            nomeEmpresa: config.nomeEmpresa || 'Não configurado',
+            assinaturaPaga: config.assinaturaPaga || false,
+            contaBloqueada: config.contaBloqueada || false,
+            diasRestantes
+          });
+        }
+        
+        state.todosUsuarios = users;
+        render();
+        
+      } catch (e) {
+        console.error('Erro ao carregar usuários:', e);
+        alert('❌ Erro ao carregar lista de clientes');
+      }
+    }
+    
+    async function adminToggleAssinatura(userId, currentStatus) {
+      if (!state.isAdmin) return;
+      
+      const novoStatus = !currentStatus;
+      const confirmMsg = novoStatus 
+        ? '✅ Marcar como PAGANTE?' 
+        : '⏳ Marcar como TRIAL?';
+      
+      if (!confirm(confirmMsg)) return;
+      
+      try {
+        const configRef = doc(db, 'configuracoes', userId);
+        
+        // Usar setDoc com merge - funciona sempre!
+        await setDoc(configRef, {
+          userId: userId,
+          assinaturaPaga: novoStatus,
+          atualizadoEm: new Date().toISOString()
+        }, { merge: true });
+        
+        alert('✅ Status atualizado!');
+        await loadAllUsers();
+        
+      } catch (e) {
+        console.error('Erro:', e);
+        alert('❌ Erro ao atualizar: ' + e.message);
+      }
+    }
+    
+    async function adminToggleBloqueio(userId, currentStatus) {
+      if (!state.isAdmin) return;
+      
+      const novoStatus = !currentStatus;
+      const confirmMsg = novoStatus 
+        ? '🔒 BLOQUEAR esta conta?' 
+        : '🔓 DESBLOQUEAR esta conta?';
+      
+      if (!confirm(confirmMsg)) return;
+      
+      try {
+        const configRef = doc(db, 'configuracoes', userId);
+        
+        // Usar setDoc com merge - funciona sempre!
+        await setDoc(configRef, {
+          userId: userId,
+          contaBloqueada: novoStatus,
+          atualizadoEm: new Date().toISOString()
+        }, { merge: true });
+        
+        alert(`✅ Conta ${novoStatus ? 'BLOQUEADA' : 'DESBLOQUEADA'}!`);
+        await loadAllUsers();
+        
+      } catch (e) {
+        console.error('Erro:', e);
+        alert('❌ Erro ao atualizar: ' + e.message);
+      }
+    }
+    
+    // ===== GERADOR DE CÓDIGOS =====
+    async function gerarCodigos(quantidade) {
+      if (!state.isAdmin) return;
+      
+      try {
+        const codigos = [];
+        
+        for (let i = 0; i < quantidade; i++) {
+          // Gerar código no formato ABC-123-XYZ
+          const parte1 = gerarLetrasAleatorias(3);
+          const parte2 = gerarNumerosAleatorios(3);
+          const parte3 = gerarLetrasAleatorias(3);
+          const codigo = `${parte1}-${parte2}-${parte3}`;
+          
+          // Salvar no Firebase
+          const codigoId = Date.now() + i;
+          await setDoc(doc(db, 'codigosAtivacao', String(codigoId)), {
+            codigo: codigo,
+            usado: false,
+            criadoEm: new Date().toISOString()
+          });
+          
+          codigos.push(codigo);
+        }
+        
+        state.codigosGerados = codigos;
+        return codigos;
+        
+      } catch (e) {
+        console.error('Erro ao gerar códigos:', e);
+        throw e;
+      }
+    }
+    
+    function gerarLetrasAleatorias(tamanho) {
+      const letras = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+      let resultado = '';
+      for (let i = 0; i < tamanho; i++) {
+        resultado += letras.charAt(Math.floor(Math.random() * letras.length));
+      }
+      return resultado;
+    }
+    
+    function gerarNumerosAleatorios(tamanho) {
+      let resultado = '';
+      for (let i = 0; i < tamanho; i++) {
+        resultado += Math.floor(Math.random() * 10);
+      }
+      return resultado;
+    }
+    
+    function copiarCodigos() {
+      const texto = state.codigosGerados.join('\n');
+      navigator.clipboard.writeText(texto).then(() => {
+        alert('✅ Códigos copiados para área de transferência!');
+      }).catch(() => {
+        alert('❌ Erro ao copiar. Copie manualmente.');
+      });
+    }
+
+    // ===== VERIFICAR SE CONTA ESTÁ BLOQUEADA =====
+    function contaBloqueadaAlert() {
+      if (state.contaBloqueada) {
+        alert('🔒 CONTA BLOQUEADA\n\nVocê está no modo visualização.\nPode ver todos os dados mas não pode editar.\n\nPara reativar, entre em contato com o suporte.');
+        return true;
+      }
+      return false;
+    }
+
     // ===== CARREGAR CONFIGURAÇÕES =====
     async function loadConfiguracoes() {
       try {
@@ -439,6 +650,8 @@
         if (configDoc.exists()) {
           const config = configDoc.data();
           state.nomeEmpresa = config.nomeEmpresa || 'Minha Empresa';
+          state.assinaturaPaga = config.assinaturaPaga || false;
+          state.contaBloqueada = config.contaBloqueada || false;
         }
       } catch (e) {
         console.log('Nenhuma configuração salva ainda');
@@ -446,14 +659,18 @@
     }
 
     // ===== SALVAR CONFIGURAÇÕES =====
-    async function salvarConfiguracoes(nomeEmpresa) {
+    async function salvarConfiguracoes(nomeEmpresa, assinaturaPaga, contaBloqueada) {
       try {
         await setDoc(doc(db, 'configuracoes', state.user.uid), {
           userId: state.user.uid,
-          nomeEmpresa: nomeEmpresa,
+          nomeEmpresa: nomeEmpresa || state.nomeEmpresa,
+          assinaturaPaga: assinaturaPaga !== undefined ? assinaturaPaga : state.assinaturaPaga,
+          contaBloqueada: contaBloqueada !== undefined ? contaBloqueada : state.contaBloqueada,
           atualizadoEm: new Date().toISOString()
         });
-        state.nomeEmpresa = nomeEmpresa;
+        if (nomeEmpresa) state.nomeEmpresa = nomeEmpresa;
+        if (assinaturaPaga !== undefined) state.assinaturaPaga = assinaturaPaga;
+        if (contaBloqueada !== undefined) state.contaBloqueada = contaBloqueada;
         console.log('✅ Configurações salvas!');
         return true;
       } catch (e) {
@@ -509,7 +726,7 @@
               <div class="mt-4 p-4 bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg border-2 border-green-200">
                 <div class="text-center">
                   <p class="text-sm font-bold text-green-800 mb-2">🎯 Ainda não tem um código?</p>
-                  <a href="https://buy.stripe.com/dRm14m55L0zq8IU7Zg7wA05" 
+                  <a href="https://www.asaas.com/c/8zq5sfd7plrzqpoc" 
                      target="_blank"
                      class="inline-block bg-gradient-to-r from-green-500 to-emerald-600 text-white font-bold px-6 py-3 rounded-lg shadow-lg hover:from-green-600 hover:to-emerald-700 transition transform hover:scale-105">
                     💳 Adquira agora por R$ 29,90/mês
@@ -562,7 +779,7 @@
               <!-- Link para Comprar -->
               <div class="mt-4 text-center p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-200">
                 <p class="text-xs text-gray-700 mb-2">Ainda não é cliente?</p>
-                <a href="https://buy.stripe.com/dRm14m55L0zq8IU7Zg7wA05" 
+                <a href="https://www.asaas.com/c/8zq5sfd7plrzqpoc" 
                    target="_blank"
                    class="text-blue-600 hover:text-blue-800 font-bold text-sm">
                   💎 Conheça o Totaliz - 30 dias grátis!
@@ -640,7 +857,7 @@
         root.innerHTML = `
           <div class="min-h-screen flex items-center justify-center">
             <div class="text-center">
-               <div class="text-6xl mb-4">⏳</div>
+               <div class="text-6xl mb-4">⏳</div>>
               <p class="text-xl font-bold">Carregando dados da nuvem...</p>
               <p class="text-gray-600 mt-2">Aguarde um momento</p>
             </div>
@@ -653,13 +870,10 @@
         <div class="min-h-screen p-4">
           <div class="max-w-7xl mx-auto">
             <div class="bg-gradient-to-r from-purple-600 via-pink-500 to-orange-500 text-white p-6 rounded-lg shadow-lg mb-6">
-              <div class="flex justify-between items-center">
-                <div class="flex items-center gap-3">
-                  <div>
-                    <h1 class="text-3xl font-bold">Totaliz</h1>
-                    <p class="text-blue-100">Sistema de Gestão Inteligente</p>
-                  </div>
-                  <span class="bg-white/20 text-white text-xs font-bold px-3 py-1 rounded-full" title="🚀 Versão Beta - Você faz parte da nossa comunidade pioneira!">
+              <div class="flex justify-between items-start">
+                <div class="flex items-start gap-4 relative">
+                  <img src="logo-totaliz-final.png" alt="Totaliz" class="h-32 md:h-40 lg:h-48 w-auto" style="max-width: 100%;">
+                  <span class="bg-white/20 text-white text-xs font-bold px-3 py-1 rounded-full absolute -top-1 -right-16" title="🚀 Versão Beta - Você faz parte da nossa comunidade pioneira!">
                     BETA
                   </span>
                 </div>
@@ -676,6 +890,24 @@
             </div>
 
             ${state.showTrialBanner ? renderTrialBanner() : ''}
+            
+            ${state.contaBloqueada ? `
+              <div class="bg-red-500 text-white p-6 rounded-lg shadow-lg mb-6">
+                <div class="flex items-center gap-4">
+                  <div class="text-4xl">🔒</div>
+                  <div class="flex-1">
+                    <h3 class="text-xl font-bold mb-1">CONTA EM MODO VISUALIZAÇÃO</h3>
+                    <p class="text-sm opacity-90">
+                      Você pode ver todos os seus dados mas não pode adicionar, editar ou deletar nada.
+                      Entre em contato com o suporte para reativar sua assinatura.
+                    </p>
+                  </div>
+                  <button data-action="open-support" class="bg-white text-red-500 px-6 py-3 rounded-lg font-bold hover:bg-red-50 transition">
+                    💬 Contato
+                  </button>
+                </div>
+              </div>
+            ` : ''}
 
             ${state.activeTab !== 'dashboard' ? `
               <div class="mb-4">
@@ -693,6 +925,19 @@
 
         ${state.showModal ? renderModal() : ''}
         ${state.showSupportModal ? renderSupportModal() : ''}
+        
+        <!-- Botão Flutuante WhatsApp -->
+        <a 
+          href="https://wa.me/5544991522243?text=Olá!%20Preciso%20de%20ajuda%20com%20o%20Totaliz" 
+          target="_blank"
+          class="fixed bottom-6 right-6 bg-green-500 hover:bg-green-600 text-white rounded-full p-4 shadow-lg hover:shadow-xl transition-all z-50 flex items-center gap-2"
+          title="Fale conosco no WhatsApp"
+        >
+          <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/>
+          </svg>
+          <span class="hidden md:inline font-medium">Suporte</span>
+        </a>
       `;
 
       attachEventListeners();
@@ -1055,7 +1300,7 @@
             </div>
             <div class="text-right ml-4">
               <a 
-                href="https://buy.stripe.com/dRm14m55L0zq8IU7Zg7wA05" 
+                href="https://www.asaas.com/c/8zq5sfd7plrzqpoc" 
                 target="_blank"
                 class="bg-white text-blue-600 font-bold px-6 py-3 rounded-lg shadow-lg hover:bg-blue-50 transition inline-block"
               >
@@ -1073,45 +1318,39 @@
         <div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
           <div class="bg-white rounded-lg shadow-2xl max-w-md w-full p-6">
             <div class="flex justify-between items-center mb-6">
-              <h2 class="text-2xl font-bold text-gray-800">Precisa de Ajuda?</h2>
+              <h2 class="text-2xl font-bold text-gray-800">💬 Fale Conosco</h2>
               <button data-action="close-support" class="text-gray-400 hover:text-gray-600 text-2xl">×</button>
             </div>
             
             <div class="space-y-4">
-              <!-- Email de Contato -->
-              <div class="p-4 bg-blue-50 rounded-lg border border-blue-200">
-                <h3 class="font-bold text-blue-900 mb-2 flex items-center gap-2">
-                  📧 Email
-                </h3>
-                <a href="mailto:contato@totaliz.com.br" class="text-blue-600 hover:underline">
-                  contato@totaliz.com.br
+              <!-- WhatsApp - Destaque -->
+              <a 
+                href="https://wa.me/5544991522243?text=Olá!%20Preciso%20de%20ajuda%20com%20o%20Totaliz" 
+                target="_blank"
+                class="block p-6 bg-gradient-to-br from-green-400 to-green-600 rounded-lg hover:from-green-500 hover:to-green-700 transition shadow-lg"
+              >
+                <div class="flex items-center gap-4 text-white">
+                  <div class="bg-white/20 p-4 rounded-full">
+                    <svg class="w-10 h-10" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/>
+                    </svg>
+                  </div>
+                  <div class="flex-1">
+                    <h3 class="text-xl font-bold mb-1">WhatsApp</h3>
+                    <p class="text-sm opacity-90 mb-2">Atendimento rápido e direto</p>
+                    <p class="text-lg font-bold">+55 44 99152-2243</p>
+                    <p class="text-xs opacity-75 mt-1">👆 Clique para conversar agora</p>
+                  </div>
+                </div>
+              </a>
+              
+              <!-- Email - Secundário -->
+              <div class="p-4 bg-blue-50 rounded-lg border border-blue-200 text-center">
+                <p class="text-sm text-gray-600 mb-2">Ou envie um email:</p>
+                <a href="mailto:contato@totaliz.com.br" class="text-blue-600 hover:underline font-medium">
+                  📧 contato@totaliz.com.br
                 </a>
-              </div>
-              
-              <!-- WhatsApp -->
-              <div class="p-4 bg-green-50 rounded-lg border border-green-200">
-                <h3 class="font-bold text-green-900 mb-2 flex items-center gap-2">
-                  📱 WhatsApp
-                </h3>
-                <p class="text-sm text-gray-600 mb-3">
-                  Em breve! Estamos configurando nosso atendimento via WhatsApp.
-                </p>
-              </div>
-              
-              <!-- Formulário de Mensagem -->
-              <div class="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                <h3 class="font-bold text-gray-900 mb-3">✉️ Envie sua mensagem</h3>
-                <textarea 
-                  id="support-message" 
-                  class="w-full border rounded px-3 py-2 h-32 focus:ring-2 focus:ring-blue-500" 
-                  placeholder="Descreva sua dúvida ou problema..."
-                ></textarea>
-                <button 
-                  data-action="send-support-email" 
-                  class="mt-3 w-full bg-blue-500 text-white py-2 rounded hover:bg-blue-600 font-medium"
-                >
-                  Enviar por Email
-                </button>
+                <p class="text-xs text-gray-500 mt-2">Resposta em até 24h</p>
               </div>
             </div>
           </div>
@@ -1133,6 +1372,7 @@
         case 'relatorios': return renderRelatorios();
         case 'lista-compras': return renderListaCompras();
         case 'configuracoes': return renderConfiguracoes();
+        case 'admin': return renderAdmin();
         default: return '<p>Selecione uma aba</p>';
       }
     }
@@ -1214,6 +1454,14 @@
             <h3 class="text-xl font-bold mb-2">Configurações</h3>
             <p class="text-sm opacity-90">Personalize seu sistema</p>
           </button>
+          
+          ${state.isAdmin ? `
+            <button data-nav="admin" class="bg-gradient-to-br from-purple-600 to-pink-600 text-white p-6 rounded-lg shadow-lg hover:shadow-xl transition-all hover:scale-105 ring-4 ring-yellow-400">
+              <div class="text-5xl mb-3">👑</div>
+              <h3 class="text-xl font-bold mb-2">PAINEL ADMIN</h3>
+              <p class="text-sm opacity-90">Gerenciar todos os clientes</p>
+            </button>
+          ` : ''}
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -1449,7 +1697,8 @@
                       <td class="px-4 py-3">
                         <div class="flex gap-2">
                           <button data-action="edit-produto" data-id="${p.id}" class="text-blue-500 hover:text-blue-600 text-sm">✏️</button>
-                          <button data-action="baixar-produto" data-id="${p.id}" data-nome="${p.nome}" data-estoque="${p.quantidade}" class="text-orange-500 hover:text-orange-600 text-sm font-bold">📦</button>
+                          <button data-action="add-estoque-produto" data-id="${p.id}" data-nome="${p.nome}" data-estoque="${p.quantidade}" class="text-green-500 hover:text-green-600 text-sm font-bold" title="Adicionar estoque">➕</button>
+                          <button data-action="baixar-produto" data-id="${p.id}" data-nome="${p.nome}" data-estoque="${p.quantidade}" class="text-orange-500 hover:text-orange-600 text-sm font-bold" title="Baixar estoque">📦</button>
                           <button data-action="delete-produto" data-id="${p.id}" class="text-red-500 hover:text-red-600 text-sm">🗑️</button>
                         </div>
                       </td>
@@ -2172,12 +2421,138 @@
             <div class="p-6 bg-gray-50 border border-gray-200 rounded-lg">
               <h3 class="text-lg font-bold text-gray-900 mb-3">ℹ️ Informações do Sistema</h3>
               <div class="space-y-2 text-sm text-gray-600">
-                <p><strong>Versão:</strong> Totaliz v2.1 BETA</p>
+                <p><strong>Versão:</strong> Totaliz v2.6 BETA</p>
                 <p><strong>Email:</strong> ${state.user?.email || ''}</p>
                 <p><strong>Trial:</strong> ${getTrialDaysRemaining() !== null ? `${getTrialDaysRemaining()} dias restantes` : 'Período de teste'}</p>
+                <p><strong>Assinatura:</strong> ${state.assinaturaPaga ? '✅ Ativa' : '⏳ Trial'}</p>
+                <p><strong>Conta:</strong> ${state.contaBloqueada ? '🔒 Bloqueada' : '🔓 Ativa'}</p>
               </div>
             </div>
           </div>
+        </div>
+      `;
+    }
+    
+    function renderAdmin() {
+      if (!state.isAdmin) {
+        return `
+          <div class="text-center py-20">
+            <div class="text-6xl mb-4">🔒</div>
+            <h2 class="text-2xl font-bold mb-2">Acesso Negado</h2>
+            <p class="text-gray-600">Você não tem permissão para acessar esta página.</p>
+          </div>
+        `;
+      }
+      
+      return `
+        <div class="bg-white rounded-lg shadow p-6">
+          <h2 class="text-3xl font-bold mb-6">👑 Painel Administrativo</h2>
+          
+          <!-- Gerador de Códigos -->
+          <div class="bg-gradient-to-r from-green-500 to-emerald-600 text-white p-6 rounded-lg mb-6">
+            <h3 class="text-xl font-bold mb-2">🎫 Gerador de Códigos de Ativação</h3>
+            <p class="opacity-90 mb-4">Gere códigos para novos clientes</p>
+            
+            <div class="flex gap-4 items-end">
+              <div>
+                <label class="block text-sm mb-2">Quantidade:</label>
+                <input 
+                  type="number" 
+                  id="qtd-codigos" 
+                  value="1" 
+                  min="1" 
+                  max="50"
+                  class="bg-white text-gray-900 px-4 py-2 rounded-lg w-24"
+                >
+              </div>
+              <button 
+                data-action="gerar-codigos" 
+                class="bg-white text-green-600 px-6 py-2 rounded-lg font-bold hover:bg-green-50 transition"
+              >
+                ⚡ Gerar Códigos
+              </button>
+            </div>
+            
+            ${state.codigosGerados && state.codigosGerados.length > 0 ? `
+              <div class="mt-4 bg-white/20 p-4 rounded-lg">
+                <p class="font-bold mb-2">✅ Códigos gerados com sucesso!</p>
+                <div class="bg-white text-gray-900 p-3 rounded font-mono text-sm max-h-40 overflow-y-auto">
+                  ${state.codigosGerados.map(c => `<div class="mb-1">${c}</div>`).join('')}
+                </div>
+                <button 
+                  data-action="copiar-codigos" 
+                  class="mt-3 bg-green-700 text-white px-4 py-2 rounded text-sm hover:bg-green-800"
+                >
+                  📋 Copiar Todos
+                </button>
+              </div>
+            ` : ''}
+          </div>
+          
+          <!-- Gerenciar Clientes -->
+          <div class="bg-gradient-to-r from-purple-600 to-pink-600 text-white p-6 rounded-lg mb-6">
+            <h3 class="text-xl font-bold mb-2">👥 Gerenciar Clientes</h3>
+            <p class="opacity-90">Controle todas as contas do Totaliz</p>
+          </div>
+          
+          <div class="mb-6">
+            <button data-action="load-all-users" class="bg-blue-500 text-white px-6 py-3 rounded-lg font-bold hover:bg-blue-600">
+              🔄 Carregar Todos os Clientes
+            </button>
+          </div>
+          
+          ${state.todosUsuarios.length > 0 ? `
+            <div class="overflow-x-auto">
+              <table class="w-full">
+                <thead class="bg-gray-100">
+                  <tr>
+                    <th class="px-4 py-3 text-left">Email</th>
+                    <th class="px-4 py-3 text-left">Nome Empresa</th>
+                    <th class="px-4 py-3 text-left">Status</th>
+                    <th class="px-4 py-3 text-left">Trial</th>
+                    <th class="px-4 py-3 text-left">Ações</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${state.todosUsuarios.map(user => `
+                    <tr class="border-b hover:bg-gray-50">
+                      <td class="px-4 py-3">${user.email}</td>
+                      <td class="px-4 py-3">${user.nomeEmpresa || 'Não configurado'}</td>
+                      <td class="px-4 py-3">
+                        ${user.assinaturaPaga ? '<span class="text-green-600 font-bold">✅ Pago</span>' : '<span class="text-yellow-600 font-bold">⏳ Trial</span>'}
+                        ${user.contaBloqueada ? '<br><span class="text-red-600 font-bold">🔒 Bloqueado</span>' : ''}
+                      </td>
+                      <td class="px-4 py-3 text-sm text-gray-600">${user.diasRestantes !== null ? `${user.diasRestantes} dias` : '-'}</td>
+                      <td class="px-4 py-3">
+                        <div class="flex gap-2">
+                          <button 
+                            data-action="admin-toggle-pago" 
+                            data-user-id="${user.userId}"
+                            data-current="${user.assinaturaPaga}"
+                            class="text-xs px-3 py-1 rounded ${user.assinaturaPaga ? 'bg-gray-500' : 'bg-green-500'} text-white hover:opacity-80"
+                          >
+                            ${user.assinaturaPaga ? '⏳ Trial' : '✅ Pago'}
+                          </button>
+                          <button 
+                            data-action="admin-toggle-bloqueio"
+                            data-user-id="${user.userId}"
+                            data-current="${user.contaBloqueada}"
+                            class="text-xs px-3 py-1 rounded ${user.contaBloqueada ? 'bg-green-500' : 'bg-red-500'} text-white hover:opacity-80"
+                          >
+                            ${user.contaBloqueada ? '🔓 Ativar' : '🔒 Bloquear'}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+          ` : `
+            <div class="text-center py-12 bg-gray-50 rounded-lg">
+              <p class="text-gray-500 mb-4">Clique no botão acima para carregar todos os clientes</p>
+            </div>
+          `}
         </div>
       `;
     }
@@ -2693,6 +3068,69 @@
           render();
         });
       });
+      
+      // ===== LISTENERS ADMIN =====
+      
+      // Carregar todos os usuários
+      document.querySelectorAll('[data-action="load-all-users"]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          btn.textContent = '⏳ Carregando...';
+          btn.disabled = true;
+          await loadAllUsers();
+          btn.textContent = '🔄 Recarregar';
+          btn.disabled = false;
+        });
+      });
+      
+      // Gerar códigos
+      document.querySelectorAll('[data-action="gerar-codigos"]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const qtd = parseInt(document.getElementById('qtd-codigos')?.value || 1);
+          
+          if (qtd < 1 || qtd > 50) {
+            return alert('⚠️ Digite uma quantidade entre 1 e 50');
+          }
+          
+          btn.textContent = '⏳ Gerando...';
+          btn.disabled = true;
+          
+          try {
+            await gerarCodigos(qtd);
+            alert(`✅ ${qtd} código(s) gerado(s) com sucesso!`);
+            render();
+          } catch (e) {
+            alert('❌ Erro ao gerar códigos');
+          }
+          
+          btn.textContent = '⚡ Gerar Códigos';
+          btn.disabled = false;
+        });
+      });
+      
+      // Copiar códigos
+      document.querySelectorAll('[data-action="copiar-codigos"]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          copiarCodigos();
+        });
+      });
+      
+      // Toggle assinatura paga
+      document.querySelectorAll('[data-action="admin-toggle-pago"]').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          const userId = e.currentTarget.dataset.userId;
+          const current = e.currentTarget.dataset.current === 'true';
+          await adminToggleAssinatura(userId, current);
+        });
+      });
+      
+      // Toggle bloqueio
+      document.querySelectorAll('[data-action="admin-toggle-bloqueio"]').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          const userId = e.currentTarget.dataset.userId;
+          const current = e.currentTarget.dataset.current === 'true';
+          await adminToggleBloqueio(userId, current);
+        });
+      });
 
       // Botão voltar
       document.querySelectorAll('[data-action="voltar-dashboard"]').forEach(btn => {
@@ -2882,9 +3320,53 @@
         });
       });
       
+      // Adicionar estoque em produto
+      document.querySelectorAll('[data-action="add-estoque-produto"]').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          if (contaBloqueadaAlert()) return;
+          
+          const id = e.currentTarget.dataset.id;
+          const nome = e.currentTarget.dataset.nome;
+          const estoque = parseFloat(e.currentTarget.dataset.estoque);
+          
+          const qtd = prompt(`➕ Adicionar Estoque - ${nome}\n\nEstoque atual: ${estoque} unidades\n\nQuantidade a adicionar:`);
+          if (!qtd) return;
+          
+          const qtdInt = parseInt(qtd);
+          if (isNaN(qtdInt) || qtdInt <= 0) {
+            return alert('❌ Quantidade inválida!');
+          }
+          
+          const motivo = prompt('📝 Motivo (opcional):', 'Produção manual/Compra/Ajuste');
+          
+          const produto = state.produtos.find(p => p.id == id);
+          if (produto) {
+            produto.quantidade += qtdInt;
+            await saveToFirebase('produtos', id, produto);
+            
+            // Registrar movimentação
+            const mov = {
+              id: Date.now(),
+              tipo: 'entrada',
+              categoria: 'add-estoque',
+              data: new Date().toISOString(),
+              descricao: `Entrada: ${nome} - ${motivo || 'Sem motivo'}`,
+              valor: 0
+            };
+            await saveToFirebase('movimentacoes', mov.id, mov);
+            state.movimentacoes.push(mov);
+            
+            alert(`✅ Estoque adicionado!\n\nNovo estoque: ${produto.quantidade} unidades`);
+            render();
+          }
+        });
+      });
+      
       // Baixar estoque de produto
       document.querySelectorAll('[data-action="baixar-produto"]').forEach(btn => {
         btn.addEventListener('click', async (e) => {
+          if (contaBloqueadaAlert()) return;
+          
           const id = e.currentTarget.dataset.id;
           const nome = e.currentTarget.dataset.nome;
           const estoque = parseFloat(e.currentTarget.dataset.estoque);
@@ -3317,25 +3799,6 @@
 
       document.querySelectorAll('[data-action="close-support"]').forEach(btn => {
         btn.addEventListener('click', () => {
-          state.showSupportModal = false;
-          render();
-        });
-      });
-
-      document.querySelectorAll('[data-action="send-support-email"]').forEach(btn => {
-        btn.addEventListener('click', () => {
-          const message = document.getElementById('support-message')?.value;
-          
-          if (!message || message.trim() === '') {
-            alert('Por favor, escreva sua mensagem antes de enviar.');
-            return;
-          }
-          
-          const subject = encodeURIComponent('Suporte Totaliz');
-          const body = encodeURIComponent(`Olá equipe Totaliz,\n\n${message}\n\n---\nEnviado por: ${state.user?.email || 'Usuário'}`);
-          
-          window.open(`mailto:contato@totaliz.com.br?subject=${subject}&body=${body}`, '_blank');
-          
           state.showSupportModal = false;
           render();
         });
