@@ -58,6 +58,24 @@
       trialStartDate: null,
       showTrialBanner: false,
       showSupportModal: false,
+      unidadesMedida: [
+        { unidade: 'g',   grupo: 'Massa',       fator: 1,       ativo: true },
+        { unidade: 'kg',  grupo: 'Massa',       fator: 1000,    ativo: true },
+        { unidade: 'mg',  grupo: 'Massa',       fator: 0.001,   ativo: false },
+        { unidade: 'oz',  grupo: 'Massa',       fator: 28.3495, ativo: false },
+        { unidade: 'lb',  grupo: 'Massa',       fator: 453.592, ativo: false },
+        { unidade: 'ml',  grupo: 'Volume',      fator: 1,       ativo: true },
+        { unidade: 'L',   grupo: 'Volume',      fator: 1000,    ativo: true },
+        { unidade: 'cl',  grupo: 'Volume',      fator: 10,      ativo: false },
+        { unidade: 'cm',  grupo: 'Comprimento', fator: 1,       ativo: false },
+        { unidade: 'm',   grupo: 'Comprimento', fator: 100,     ativo: false },
+        { unidade: 'mm',  grupo: 'Comprimento', fator: 0.1,     ativo: false },
+        { unidade: 'pol', grupo: 'Comprimento', fator: 2.54,    ativo: false },
+        { unidade: 'un',  grupo: 'Capacidade',  fator: 1,       ativo: true },
+        { unidade: 'cx',  grupo: 'Capacidade',  fator: 1,       ativo: false },
+        { unidade: 'dz',  grupo: 'Capacidade',  fator: 12,      ativo: false },
+        { unidade: 'pcs', grupo: 'Capacidade',  fator: 1,       ativo: false },
+      ],
       nomeEmpresa: 'Minha Empresa', // Nome personalizável da empresa
       assinaturaPaga: false, // Se cliente já pagou (você marca manualmente)
       contaBloqueada: false, // Se conta está bloqueada (modo visualização)
@@ -308,6 +326,18 @@
         // Criar conta no Firebase Auth
         await createUserWithEmailAndPassword(auth, email, password);
         
+        // Criar doc de configurações para o novo usuário (nome vazio pra ele definir)
+        const newUser = getAuth().currentUser;
+        if (newUser) {
+          await setDoc(doc(db, 'configuracoes', newUser.uid), {
+            userId: newUser.uid,
+            nomeEmpresa: '',
+            assinaturaPaga: false,
+            contaBloqueada: false,
+            atualizadoEm: new Date().toISOString()
+          });
+        }
+        
         // Marcar código como usado
         await setDoc(doc(db, 'codigosAtivacao', codigoDoc.id), {
           ...codigoData,
@@ -430,6 +460,58 @@
         console.error('Erro ao deletar:', e);
         return false;
       }
+    }
+
+    // ============================================
+    // CONVERSÃO DE UNIDADES
+    // ============================================
+    // Tabela base completa (usado como fallback se state ainda não carregou)
+    const TABELA_UNIDADES_BASE = [
+      { unidade: 'g',   grupo: 'Massa',       fator: 1,       ativo: true },
+      { unidade: 'kg',  grupo: 'Massa',       fator: 1000,    ativo: true },
+      { unidade: 'mg',  grupo: 'Massa',       fator: 0.001,   ativo: false },
+      { unidade: 'oz',  grupo: 'Massa',       fator: 28.3495, ativo: false },
+      { unidade: 'lb',  grupo: 'Massa',       fator: 453.592, ativo: false },
+      { unidade: 'ml',  grupo: 'Volume',      fator: 1,       ativo: true },
+      { unidade: 'L',   grupo: 'Volume',      fator: 1000,    ativo: true },
+      { unidade: 'cl',  grupo: 'Volume',      fator: 10,      ativo: false },
+      { unidade: 'cm',  grupo: 'Comprimento', fator: 1,       ativo: false },
+      { unidade: 'm',   grupo: 'Comprimento', fator: 100,     ativo: false },
+      { unidade: 'mm',  grupo: 'Comprimento', fator: 0.1,     ativo: false },
+      { unidade: 'pol', grupo: 'Comprimento', fator: 2.54,    ativo: false },
+      { unidade: 'un',  grupo: 'Capacidade',  fator: 1,       ativo: true },
+      { unidade: 'cx',  grupo: 'Capacidade',  fator: 1,       ativo: false },
+      { unidade: 'dz',  grupo: 'Capacidade',  fator: 12,      ativo: false },
+      { unidade: 'pcs', grupo: 'Capacidade',  fator: 1,       ativo: false },
+    ];
+
+    function getTabelaAtual() {
+      return (state.unidadesMedida && state.unidadesMedida.length) ? state.unidadesMedida : TABELA_UNIDADES_BASE;
+    }
+
+    function getGrupo(unidade) {
+      const tabela = getTabelaAtual();
+      const item = tabela.find(u => u.unidade === unidade);
+      if (item) return { grupo: item.grupo, fator: item.fator };
+      return { grupo: unidade, fator: 1 };
+    }
+
+    function converterUnidade(quantidade, de, para) {
+      if (de === para) return quantidade;
+      const origem = getGrupo(de);
+      const destino = getGrupo(para);
+      if (origem.grupo !== destino.grupo) return null;
+      return quantidade * (origem.fator / destino.fator);
+    }
+
+    function unidadesCompativeis(u1, u2) {
+      if (u1 === u2) return true;
+      return getGrupo(u1).grupo === getGrupo(u2).grupo;
+    }
+
+    // Retorna apenas as unidades ativas pra usar nos selects
+    function getUnidadesAtivas() {
+      return getTabelaAtual().filter(u => u.ativo).map(u => u.unidade);
     }
 
     async function loadAllData() {
@@ -657,9 +739,21 @@
         const configDoc = await getDoc(doc(db, 'configuracoes', state.user.uid));
         if (configDoc.exists()) {
           const config = configDoc.data();
-          state.nomeEmpresa = config.nomeEmpresa || 'Minha Empresa';
+          state.nomeEmpresa = config.nomeEmpresa || '';
           state.assinaturaPaga = config.assinaturaPaga || false;
           state.contaBloqueada = config.contaBloqueada || false;
+          state.unidadesMedida = config.unidadesMedida && Array.isArray(config.unidadesMedida)
+            ? TABELA_UNIDADES_BASE.map(base => {
+                const salva = config.unidadesMedida.find(u => u.unidade === base.unidade);
+                return salva ? { ...base, ativo: salva.ativo } : base;
+              })
+            : TABELA_UNIDADES_BASE;
+
+          // Se nome da empresa ainda não foi definido, força ir pra configurações
+          if (!state.nomeEmpresa) {
+            state.nomeEmpresa = 'Minha Empresa';
+            state.activeTab = 'configuracoes';
+          }
         }
       } catch (e) {
         console.log('Nenhuma configuração salva ainda');
@@ -669,16 +763,24 @@
     // ===== SALVAR CONFIGURAÇÕES =====
     async function salvarConfiguracoes(nomeEmpresa, assinaturaPaga, contaBloqueada) {
       try {
+        // Ler estado dos checkboxes de unidades
+        const unidadesMedida = state.unidadesMedida.map(u => {
+          const cb = document.querySelector(`.unidade-checkbox[data-unidade="${u.unidade}"]`);
+          return { ...u, ativo: cb ? cb.checked : u.ativo };
+        });
+
         await setDoc(doc(db, 'configuracoes', state.user.uid), {
           userId: state.user.uid,
           nomeEmpresa: nomeEmpresa || state.nomeEmpresa,
           assinaturaPaga: assinaturaPaga !== undefined ? assinaturaPaga : state.assinaturaPaga,
           contaBloqueada: contaBloqueada !== undefined ? contaBloqueada : state.contaBloqueada,
+          unidadesMedida: unidadesMedida,
           atualizadoEm: new Date().toISOString()
         });
         if (nomeEmpresa) state.nomeEmpresa = nomeEmpresa;
         if (assinaturaPaga !== undefined) state.assinaturaPaga = assinaturaPaga;
         if (contaBloqueada !== undefined) state.contaBloqueada = contaBloqueada;
+        state.unidadesMedida = unidadesMedida;
         console.log('✅ Configurações salvas!');
         return true;
       } catch (e) {
@@ -1299,7 +1401,8 @@
               quantidade: quantidade,
               custoUnitario: custo,
               precoVenda: precoVenda,
-              estoqueMinimo: 10,
+              unidade: document.getElementById('unidadeProdutoDireto')?.value || 'un',
+              estoqueMinimo: parseFloat(document.getElementById('estoqueMinimoProdutoDireto')?.value) || 5,
               ehIntermediario: ehIntermediario
             };
             
@@ -1685,7 +1788,8 @@
                   <p class="text-sm font-medium mb-1">Ingredientes:</p>
                   ${r.ingredientes.map(ing => {
                     const ins = state.insumos.find(x => x.id == ing.insumoId);
-                    return `<p class="text-sm text-gray-600">🔸 ${ins?.nome || 'Insumo'}: ${ing.quantidade} ${ins?.unidade || ''} (${ing.tipo === 'fixo' ? 'fixo' : 'por unid'})</p>`;
+                    const unidade = ing.unidade || ins?.unidade || '';
+                    return `<p class="text-sm text-gray-600">🔸 ${ins?.nome || 'Insumo'}: ${ing.quantidade} ${unidade} (${ing.tipo === 'fixo' ? 'fixo' : 'por unid'})</p>`;
                   }).join('')}
                 </div>
               </div>
@@ -2448,6 +2552,12 @@
             <div class="mb-6 p-6 bg-blue-50 border border-blue-200 rounded-lg">
               <h3 class="text-lg font-bold text-blue-900 mb-4">🏢 Dados da Empresa</h3>
               
+              ${state.nomeEmpresa === 'Minha Empresa' ? `
+                <div class="bg-yellow-50 border border-yellow-300 rounded-lg p-3 mb-4">
+                  <p class="text-sm text-yellow-800 font-medium">👇 Bem-vindo! Defina o nome da sua empresa abaixo para começar.</p>
+                </div>
+              ` : ''}
+              
               <div class="space-y-4">
                 <div>
                   <label class="block text-sm font-medium mb-2 text-gray-700">Nome da sua Empresa</label>
@@ -2459,6 +2569,26 @@
                     placeholder="Ex: Geladinhos Gourmet"
                   >
                   <p class="text-xs text-gray-500 mt-2">Este nome aparecerá no dashboard e relatórios</p>
+                </div>
+                
+                <div>
+                  <label class="block text-sm font-medium mb-3 text-gray-700">📏 Unidades de Medida</label>
+                  <p class="text-xs text-gray-500 mb-3">Ative as unidades que você usa. Conversão automática funciona dentro do mesmo grupo.</p>
+                  ${['Massa', 'Volume', 'Comprimento', 'Capacidade'].map(grupo => {
+                    const unidades = state.unidadesMedida.filter(u => u.grupo === grupo);
+                    return `
+                    <div class="mb-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                      <p class="text-xs font-bold text-gray-600 uppercase mb-2">${grupo}</p>
+                      <div class="flex flex-wrap gap-2">
+                        ${unidades.map(u => `
+                          <label class="flex items-center gap-1 cursor-pointer select-none bg-white border rounded px-2 py-1 text-sm hover:bg-blue-50 ${u.ativo ? 'border-blue-400 bg-blue-50' : 'border-gray-200'}">
+                            <input type="checkbox" class="unidade-checkbox" data-unidade="${u.unidade}" ${u.ativo ? 'checked' : ''}>
+                            <span class="font-medium">${u.unidade}</span>
+                          </label>
+                        `).join('')}
+                      </div>
+                    </div>
+                  `}).join('')}
                 </div>
                 
                 <button 
@@ -2473,7 +2603,7 @@
             <div class="p-6 bg-gray-50 border border-gray-200 rounded-lg">
               <h3 class="text-lg font-bold text-gray-900 mb-3">ℹ️ Informações do Sistema</h3>
               <div class="space-y-2 text-sm text-gray-600">
-                <p><strong>Versão:</strong> Totaliz v2.6 BETA</p>
+                <p><strong>Versão:</strong> Totaliz v2.9.3 BETA</p>
                 <p><strong>Email:</strong> ${state.user?.email || ''}</p>
                 <p><strong>Trial:</strong> ${getTrialDaysRemaining() !== null ? `${getTrialDaysRemaining()} dias restantes` : 'Período de teste'}</p>
                 <p><strong>Assinatura:</strong> ${state.assinaturaPaga ? '✅ Ativa' : '⏳ Trial'}</p>
@@ -2668,9 +2798,7 @@
             <div>
               <label class="block text-sm mb-1">Unidade</label>
               <select id="unidade" class="w-full border rounded px-3 py-2">
-                <option value="g" ${i?.unidade === 'g' ? 'selected' : ''}>Gramas (g)</option>
-                <option value="ml" ${i?.unidade === 'ml' ? 'selected' : ''}>Mililitros (ml)</option>
-                <option value="un" ${i?.unidade === 'un' ? 'selected' : ''}>Unidades (un)</option>
+                ${getUnidadesAtivas().map(val => `<option value="${val}" ${i?.unidade === val ? 'selected' : ''}>${val}</option>`).join('')}
               </select>
             </div>
             ${!i ? `
@@ -2765,9 +2893,7 @@
               <div>
                 <label class="block text-sm mb-1">Unidade de Medida</label>
                 <select id="unidadeIntermediario" class="w-full border rounded px-3 py-2">
-                  <option value="g">Gramas (g)</option>
-                  <option value="ml">Mililitros (ml)</option>
-                  <option value="un">Unidades (un)</option>
+                  ${getUnidadesAtivas().map(val => `<option value="${val}">${val}</option>`).join('')}
                 </select>
               </div>
             ` : ''}
@@ -2870,6 +2996,19 @@
               <input type="number" step="0.01" id="custoProdutoDireto" class="w-full border rounded px-3 py-2" placeholder="Ex: 2.50">
             </div>
             
+            <div>
+              <label class="block text-sm mb-1">Unidade</label>
+              <select id="unidadeProdutoDireto" class="w-full border rounded px-3 py-2">
+                ${getUnidadesAtivas().map(val => `<option value="${val}">${val}</option>`).join('')}
+              </select>
+            </div>
+            
+            <div>
+              <label class="block text-sm mb-1">⚠️ Estoque Mínimo</label>
+              <input type="number" step="0.01" id="estoqueMinimoProdutoDireto" class="w-full border rounded px-3 py-2" placeholder="Ex: 10" value="5">
+              <p class="text-xs text-gray-500 mt-1">💡 Você receberá alerta quando atingir este limite</p>
+            </div>
+
             <div id="precoVendaDiretoContainer">
               <label class="block text-sm mb-1">Preço de Venda (R$)</label>
               <input type="number" step="0.01" id="precoVendaDireto" class="w-full border rounded px-3 py-2" placeholder="Ex: 5.00">
@@ -3733,7 +3872,7 @@
 
         document.querySelectorAll('[data-action="add-ingrediente"]').forEach(btn => {
           btn.onclick = () => {
-            ingredientesReceita.push({insumoId: '', quantidade: '', tipo: 'fixo'});
+            ingredientesReceita.push({insumoId: '', quantidade: '', tipo: 'fixo', unidade: ''});
             renderIngredientesReceita();
           };
         });
@@ -3746,7 +3885,10 @@
             const custo = ingredientesReceita.reduce((t, ing) => {
               const ins = state.insumos.find(i => i.id == ing.insumoId);
               if (!ins || !ing.quantidade) return t;
-              return t + (parseFloat(ing.quantidade) * ins.precoMedio);
+              const unidadeIng = ing.unidade || ins.unidade;
+              const qtdConvertida = converterUnidade(parseFloat(ing.quantidade), unidadeIng, ins.unidade);
+              if (qtdConvertida === null) return t;
+              return t + (qtdConvertida * ins.precoMedio);
             }, 0);
 
             if (state.editingId) {
@@ -3756,6 +3898,7 @@
                 receita.ingredientes = ingredientesReceita.map(i => ({
                   insumoId: parseInt(i.insumoId),
                   quantidade: parseFloat(i.quantidade),
+                  unidade: i.unidade || '',
                   tipo: i.tipo
                 }));
                 receita.custoTotal = custo;
@@ -3768,6 +3911,7 @@
                 ingredientes: ingredientesReceita.map(i => ({
                   insumoId: parseInt(i.insumoId),
                   quantidade: parseFloat(i.quantidade),
+                  unidade: i.unidade || '',
                   tipo: i.tipo
                 })),
                 custoTotal: custo
@@ -3790,26 +3934,43 @@
 
         const insumosOrdenados = [...state.insumos].sort((a, b) => a.nome.localeCompare(b.nome));
 
-        list.innerHTML = ingredientesReceita.map((ing, i) => `
-          <div class="flex gap-2 items-center">
+        list.innerHTML = ingredientesReceita.map((ing, i) => {
+          const insumo = state.insumos.find(x => x.id == ing.insumoId);
+          const unidadeInsumo = insumo?.unidade || '';
+          const unidadeAtual = ing.unidade || unidadeInsumo;
+          const compativel = insumo ? unidadesCompativeis(unidadeAtual, unidadeInsumo) : true;
+
+          return `
+          <div class="flex gap-2 items-center ${!compativel ? 'bg-red-50 border border-red-200 rounded p-1' : ''}">
             <select class="flex-1 border rounded px-2 py-1 text-sm" data-ing-field="insumoId" data-ing-index="${i}">
               <option value="">Selecione...</option>
-              ${insumosOrdenados.map(ins => `<option value="${ins.id}" ${ing.insumoId == ins.id ? 'selected' : ''}>${ins.nome}</option>`).join('')}
+              ${[...state.insumos].sort((a,b) => a.nome.localeCompare(b.nome)).map(ins => `<option value="${ins.id}" ${ing.insumoId == ins.id ? 'selected' : ''}>${ins.nome} (${ins.unidade})</option>`).join('')}
             </select>
             <input type="number" step="0.01" placeholder="Qtd" class="w-20 border rounded px-2 py-1 text-sm" data-ing-field="quantidade" data-ing-index="${i}" value="${ing.quantidade}">
+            <select class="w-16 border rounded px-1 py-1 text-sm ${!compativel ? 'border-red-500' : ''}" data-ing-field="unidade" data-ing-index="${i}">
+              ${getUnidadesAtivas().map(val => `<option value="${val}" ${unidadeAtual === val ? 'selected' : ''}>${val}</option>`).join('')}
+            </select>
             <select class="w-24 border rounded px-2 py-1 text-sm" data-ing-field="tipo" data-ing-index="${i}">
               <option value="fixo" ${ing.tipo === 'fixo' ? 'selected' : ''}>Fixo</option>
               <option value="por_unidade" ${ing.tipo === 'por_unidade' ? 'selected' : ''}>Por unid.</option>
             </select>
             <button type="button" data-action="remove-ing" data-ing-index="${i}" class="text-red-500 hover:text-red-600 px-2">🗑️</button>
           </div>
-        `).join('');
+          ${!compativel ? `<p class="text-xs text-red-600 col-span-full">⚠️ Unidade incompatível com o insumo (${unidadeInsumo})</p>` : ''}
+        `;
+        }).join('');
 
         list.querySelectorAll('[data-ing-field]').forEach(el => {
           el.addEventListener('change', (e) => {
             const idx = parseInt(e.target.dataset.ingIndex);
             const field = e.target.dataset.ingField;
             ingredientesReceita[idx][field] = e.target.value;
+            // Se mudou o insumo, atualiza a unidade automaticamente
+            if (field === 'insumoId') {
+              const ins = state.insumos.find(x => x.id == e.target.value);
+              if (ins) ingredientesReceita[idx].unidade = ins.unidade;
+            }
+            renderIngredientesReceita();
           });
         });
 
@@ -3852,8 +4013,11 @@
           for (let ing of receita.ingredientes) {
             const insumo = state.insumos.find(i => i.id == ing.insumoId);
             if (!insumo) continue;
-            const qtdUsada = ing.tipo === 'por_unidade' ? ing.quantidade * rendimento : ing.quantidade * lotes;
-            custoTotal += qtdUsada * insumo.precoMedio;
+            const unidadeIng = ing.unidade || insumo.unidade;
+            const qtdBase = ing.tipo === 'por_unidade' ? ing.quantidade * rendimento : ing.quantidade * lotes;
+            const qtdConvertida = converterUnidade(qtdBase, unidadeIng, insumo.unidade);
+            if (qtdConvertida === null) continue;
+            custoTotal += qtdConvertida * insumo.precoMedio;
           }
           
           const custoUnitario = custoTotal / rendimento;
@@ -3861,8 +4025,11 @@
           for (let ing of receita.ingredientes) {
             const insumo = state.insumos.find(i => i.id == ing.insumoId);
             if (!insumo) continue;
-            const qtdUsada = ing.tipo === 'por_unidade' ? ing.quantidade * rendimento : ing.quantidade * lotes;
-            insumo.quantidade -= qtdUsada;
+            const unidadeIng = ing.unidade || insumo.unidade;
+            const qtdBase = ing.tipo === 'por_unidade' ? ing.quantidade * rendimento : ing.quantidade * lotes;
+            const qtdConvertida = converterUnidade(qtdBase, unidadeIng, insumo.unidade);
+            if (qtdConvertida === null) continue;
+            insumo.quantidade -= qtdConvertida;
             await saveToFirebase('insumos', insumo.id, insumo);
           }
           
@@ -4622,6 +4789,7 @@
         });
       });
       
+    // ============================================
     loadAllData();
   </script>
 </body>
