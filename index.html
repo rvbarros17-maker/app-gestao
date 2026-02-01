@@ -334,6 +334,7 @@
             nomeEmpresa: '',
             assinaturaPaga: false,
             contaBloqueada: false,
+            stripeCustomerId: codigoData.stripeCustomerId || null,
             atualizadoEm: new Date().toISOString()
           });
         }
@@ -393,6 +394,32 @@
         const daysRemaining = getTrialDaysRemaining();
         // Só mostra banner se NÃO tiver assinatura paga
         state.showTrialBanner = !state.assinaturaPaga && daysRemaining !== null && daysRemaining >= 0;
+
+        // Bloqueio automático quando trial acabou e não tem assinatura
+        if (!state.assinaturaPaga && daysRemaining !== null && daysRemaining < 0 && !state.contaBloqueada) {
+          state.contaBloqueada = true;
+          await setDoc(doc(db, 'configuracoes', state.user.uid), {
+            userId: state.user.uid,
+            nomeEmpresa: state.nomeEmpresa,
+            assinaturaPaga: false,
+            contaBloqueada: true,
+            atualizadoEm: new Date().toISOString()
+          });
+          console.log('🔒 Conta bloqueada automaticamente — trial acabou!');
+        }
+
+        // Bloquear conta automaticamente se trial acabou e não pagou
+        if (!state.assinaturaPaga && daysRemaining !== null && daysRemaining < 0 && !state.contaBloqueada) {
+          state.contaBloqueada = true;
+          await setDoc(doc(db, 'configuracoes', state.user.uid), {
+            userId: state.user.uid,
+            nomeEmpresa: state.nomeEmpresa,
+            assinaturaPaga: false,
+            contaBloqueada: true,
+            atualizadoEm: new Date().toISOString()
+          });
+          console.log('🔒 Conta bloqueada automaticamente — trial acabou.');
+        }
       } catch (e) {
         console.error('Erro ao verificar trial:', e);
       }
