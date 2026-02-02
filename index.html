@@ -81,7 +81,13 @@
       contaBloqueada: false, // Se conta está bloqueada (modo visualização)
       isAdmin: false, // Se usuário logado é admin
       todosUsuarios: [], // Lista de todos os usuários (só admin vê)
-      codigosGerados: [] // Códigos gerados recentemente
+      codigosGerados: [], // Códigos gerados recentemente
+      notificacoes: { // Preferências de notificações por email
+        estoqueBaixo: true,
+        trialAcabando: true,
+        resumoDiario: true,
+        clienteDevedor: true
+      }
     };
 
 
@@ -775,6 +781,14 @@
                 return salva ? { ...base, ativo: salva.ativo } : base;
               })
             : TABELA_UNIDADES_BASE;
+          
+          // Carregar preferências de notificações (padrão: todas ativas)
+          state.notificacoes = config.notificacoes || {
+            estoqueBaixo: true,
+            trialAcabando: true,
+            resumoDiario: true,
+            clienteDevedor: true
+          };
 
           // Se nome da empresa ainda não foi definido, força ir pra configurações
           if (!state.nomeEmpresa) {
@@ -795,6 +809,14 @@
           const cb = document.querySelector(`.unidade-checkbox[data-unidade="${u.unidade}"]`);
           return { ...u, ativo: cb ? cb.checked : u.ativo };
         });
+        
+        // Ler estado dos checkboxes de notificações
+        const notificacoes = {
+          estoqueBaixo: document.getElementById('notif-estoque-baixo')?.checked ?? true,
+          trialAcabando: document.getElementById('notif-trial-acabando')?.checked ?? true,
+          resumoDiario: document.getElementById('notif-resumo-diario')?.checked ?? true,
+          clienteDevedor: document.getElementById('notif-cliente-devedor')?.checked ?? true
+        };
 
         await setDoc(doc(db, 'configuracoes', state.user.uid), {
           userId: state.user.uid,
@@ -802,12 +824,14 @@
           assinaturaPaga: assinaturaPaga !== undefined ? assinaturaPaga : state.assinaturaPaga,
           contaBloqueada: contaBloqueada !== undefined ? contaBloqueada : state.contaBloqueada,
           unidadesMedida: unidadesMedida,
+          notificacoes: notificacoes,
           atualizadoEm: new Date().toISOString()
         });
         if (nomeEmpresa) state.nomeEmpresa = nomeEmpresa;
         if (assinaturaPaga !== undefined) state.assinaturaPaga = assinaturaPaga;
         if (contaBloqueada !== undefined) state.contaBloqueada = contaBloqueada;
         state.unidadesMedida = unidadesMedida;
+        state.notificacoes = notificacoes;
         console.log('✅ Configurações salvas!');
         return true;
       } catch (e) {
@@ -2516,6 +2540,41 @@
                   `}).join('')}
                 </div>
                 
+                <div>
+                  <label class="block text-sm font-medium mb-3 text-gray-700">📧 Notificações por Email</label>
+                  <p class="text-xs text-gray-500 mb-3">Escolha quais alertas automáticos você quer receber por email</p>
+                  <div class="space-y-2">
+                    <label class="flex items-center gap-3 cursor-pointer p-3 bg-gray-50 rounded-lg border border-gray-200 hover:bg-blue-50">
+                      <input type="checkbox" id="notif-estoque-baixo" ${state.notificacoes.estoqueBaixo ? 'checked' : ''} class="w-4 h-4">
+                      <div class="flex-1">
+                        <p class="font-medium text-sm">📦 Estoque Baixo</p>
+                        <p class="text-xs text-gray-500">Aviso quando insumos atingirem o estoque mínimo</p>
+                      </div>
+                    </label>
+                    <label class="flex items-center gap-3 cursor-pointer p-3 bg-gray-50 rounded-lg border border-gray-200 hover:bg-blue-50">
+                      <input type="checkbox" id="notif-trial-acabando" ${state.notificacoes.trialAcabando ? 'checked' : ''} class="w-4 h-4">
+                      <div class="flex-1">
+                        <p class="font-medium text-sm">⏰ Trial Acabando</p>
+                        <p class="text-xs text-gray-500">Lembretes 7, 3 e 1 dia antes do período de teste acabar</p>
+                      </div>
+                    </label>
+                    <label class="flex items-center gap-3 cursor-pointer p-3 bg-gray-50 rounded-lg border border-gray-200 hover:bg-blue-50">
+                      <input type="checkbox" id="notif-resumo-diario" ${state.notificacoes.resumoDiario ? 'checked' : ''} class="w-4 h-4">
+                      <div class="flex-1">
+                        <p class="font-medium text-sm">📊 Resumo Diário</p>
+                        <p class="text-xs text-gray-500">Relatório de vendas do dia enviado às 20h</p>
+                      </div>
+                    </label>
+                    <label class="flex items-center gap-3 cursor-pointer p-3 bg-gray-50 rounded-lg border border-gray-200 hover:bg-blue-50">
+                      <input type="checkbox" id="notif-cliente-devedor" ${state.notificacoes.clienteDevedor ? 'checked' : ''} class="w-4 h-4">
+                      <div class="flex-1">
+                        <p class="font-medium text-sm">⚠️ Cliente Devedor</p>
+                        <p class="text-xs text-gray-500">Alerta semanal sobre clientes com dívida há mais de 15 dias</p>
+                      </div>
+                    </label>
+                  </div>
+                </div>
+                
                 <button 
                   data-action="salvar-config" 
                   class="w-full bg-blue-500 text-white py-3 rounded-lg hover:bg-blue-600 font-bold transition"
@@ -2528,7 +2587,7 @@
             <div class="p-6 bg-gray-50 border border-gray-200 rounded-lg">
               <h3 class="text-lg font-bold text-gray-900 mb-3">ℹ️ Informações do Sistema</h3>
               <div class="space-y-2 text-sm text-gray-600">
-                <p><strong>Versão:</strong> Totaliz v2.6 BETA</p>
+                <p><strong>Versão:</strong> Totaliz v2.9.3</p>
                 <p><strong>Email:</strong> ${state.user?.email || ''}</p>
                 <p><strong>Trial:</strong> ${getTrialDaysRemaining() !== null ? `${getTrialDaysRemaining()} dias restantes` : 'Período de teste'}</p>
                 <p><strong>Assinatura:</strong> ${state.assinaturaPaga ? '✅ Ativa' : '⏳ Trial'}</p>
@@ -4467,6 +4526,125 @@
             alert('✅ Movimentação atualizada!');
             render();
           });
+        });
+      });
+
+      // ===== DESPESAS RECORRENTES =====
+      
+      // Toggle tipo de valor (fixo/variável)
+      document.querySelectorAll('input[name="tipoValor"]').forEach(radio => {
+        radio.addEventListener('change', (e) => {
+          const valorDiv = document.getElementById('valor-fixo-div');
+          if (valorDiv) {
+            valorDiv.style.display = e.target.value === 'fixo' ? 'block' : 'none';
+          }
+        });
+      });
+      
+      // Toggle parcelas no modal
+      const tipoDespSelect = document.getElementById('tipoDespesaRec');
+      if (tipoDespSelect) {
+        tipoDespSelect.addEventListener('change', () => {
+          const parcelasDiv = document.getElementById('parcelas-div');
+          if (parcelasDiv) {
+            parcelasDiv.style.display = tipoDespSelect.value === 'parcelado' ? 'block' : 'none';
+          }
+        });
+      }
+      
+      // Salvar despesa
+      document.querySelectorAll('[data-action="save-despesa-rec"]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const nome = document.getElementById('nomeDespesaRec')?.value;
+          const tipoValor = document.querySelector('input[name="tipoValor"]:checked')?.value;
+          const valor = parseFloat(document.getElementById('valorDespesaRec')?.value) || 0;
+          const tipo = document.getElementById('tipoDespesaRec')?.value;
+          const diaVencimento = parseInt(document.getElementById('diaVencimento')?.value);
+          const categoria = document.getElementById('categoriaDespesaRec')?.value;
+          
+          if (!nome || !diaVencimento) {
+            return alert('Preencha nome e dia de vencimento');
+          }
+          
+          if (tipoValor === 'fixo' && !valor) {
+            return alert('Digite o valor da despesa');
+          }
+          
+          const novaDespesa = {
+            id: Date.now(),
+            nome,
+            valor: tipoValor === 'fixo' ? valor : 0,
+            valorVariavel: tipoValor === 'variavel',
+            tipo,
+            diaVencimento,
+            categoria,
+            dataInicio: new Date().toISOString()
+          };
+          
+          if (tipo === 'parcelado') {
+            novaDespesa.totalParcelas = parseInt(document.getElementById('totalParcelas')?.value) || 12;
+          }
+          
+          await saveToFirebase('despesasRecorrentes', novaDespesa.id, novaDespesa);
+          state.despesasRecorrentes.push(novaDespesa);
+          
+          state.showModal = false;
+          render();
+        });
+      });
+      
+      // Pagar despesa
+      document.querySelectorAll('[data-action="pagar-despesa-rec"]').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          const id = e.currentTarget.dataset.id;
+          let valor = parseFloat(e.currentTarget.dataset.valor);
+          const nome = e.currentTarget.dataset.nome;
+          const variavel = e.currentTarget.dataset.variavel === 'true';
+          
+          // Se for despesa variável, pedir o valor
+          if (variavel) {
+            const valorDigitado = prompt(`💰 ${nome}\n\nDigite o valor da despesa este mês:\n(Ex: 150.50)`);
+            if (!valorDigitado) return;
+            
+            valor = parseFloat(valorDigitado.replace(',', '.'));
+            if (isNaN(valor) || valor <= 0) {
+              return alert('❌ Valor inválido!');
+            }
+          }
+          
+          if (confirm(`Registrar pagamento de ${nome} - R$ ${valor.toFixed(2)}?`)) {
+            const hoje = new Date();
+            const mesAnoKey = `${hoje.getMonth()}-${hoje.getFullYear()}`;
+            
+            const mov = {
+              id: Date.now(),
+              tipo: 'saida',
+              categoria: 'despesa-recorrente',
+              despesaRecorrenteId: parseInt(id),
+              mesAno: mesAnoKey,
+              data: new Date().toISOString(),
+              descricao: `Pagamento: ${nome}`,
+              valor
+            };
+            
+            await saveToFirebase('movimentacoes', mov.id, mov);
+            state.movimentacoes.push(mov);
+            
+            alert('✅ Pagamento registrado!');
+            render();
+          }
+        });
+      });
+      
+      // Deletar despesa
+      document.querySelectorAll('[data-action="delete-despesa-rec"]').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          if (confirm('Tem certeza que deseja excluir?')) {
+            const id = e.currentTarget.dataset.id;
+            await deleteFromFirebase('despesasRecorrentes', id);
+            state.despesasRecorrentes = state.despesasRecorrentes.filter(d => d.id != id);
+            render();
+          }
         });
       });
     }
