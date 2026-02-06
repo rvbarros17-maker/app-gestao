@@ -19,7 +19,7 @@
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
     import { getFirestore, collection, doc, getDoc, setDoc, updateDoc, getDocs, deleteDoc, query, where } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-    import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+    import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail, updatePassword } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
     const firebaseConfig = {
       apiKey: "AIzaSyAXJReFAHvGx8oqX3KU7yB37L8fNa3DkiA",
       authDomain: "app-gestao-47669.firebaseapp.com",
@@ -87,7 +87,10 @@
         trialAcabando: true,
         resumoDiario: true,
         clienteDevedor: true
-      }
+      },
+      notificacoesApp: [], // Notificações dentro do app
+      notificacoesNaoLidas: 0,
+      showNotificacoesModal: false
     };
 
 
@@ -581,6 +584,9 @@
         // Carregar configurações (nome da empresa)
         await loadConfiguracoes();
         
+        // Carregar notificações
+        await loadNotificacoes();
+        
         state.loading = false;
         
         render();
@@ -588,6 +594,75 @@
         console.error('Erro ao carregar dados:', e);
         state.loading = false;
         render();
+      }
+    }
+    
+    // ===== SISTEMA DE NOTIFICAÇÕES =====
+    async function loadNotificacoes() {
+      try {
+        const notifSnapshot = await getDocs(
+          query(
+            collection(db, 'notificacoes'),
+            where('ativo', '==', true)
+          )
+        );
+        
+        const notificacoes = notifSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        })).sort((a, b) => new Date(b.criadoEm) - new Date(a.criadoEm));
+        
+        state.notificacoesApp = notificacoes;
+        
+        // Contar não lidas
+        const notifLidasDoc = await getDoc(doc(db, 'notificacoesLidas', state.user.uid));
+        const lidas = notifLidasDoc.exists() ? notifLidasDoc.data().lidas || [] : [];
+        
+        state.notificacoesNaoLidas = notificacoes.filter(n => !lidas.includes(n.id)).length;
+        
+      } catch (e) {
+        console.error('Erro ao carregar notificações:', e);
+      }
+    }
+    
+    async function marcarNotificacaoComoLida(notifId) {
+      try {
+        const notifLidasRef = doc(db, 'notificacoesLidas', state.user.uid);
+        const notifLidasDoc = await getDoc(notifLidasRef);
+        
+        let lidas = [];
+        if (notifLidasDoc.exists()) {
+          lidas = notifLidasDoc.data().lidas || [];
+        }
+        
+        if (!lidas.includes(notifId)) {
+          lidas.push(notifId);
+          await setDoc(notifLidasRef, { lidas, userId: state.user.uid });
+          state.notificacoesNaoLidas = Math.max(0, state.notificacoesNaoLidas - 1);
+          render();
+        }
+      } catch (e) {
+        console.error('Erro ao marcar notificação:', e);
+      }
+    }
+    
+    async function enviarNotificacaoGlobal(titulo, mensagem, tipo) {
+      try {
+        const novaNotif = {
+          titulo,
+          mensagem,
+          tipo, // 'novidade', 'dica', 'atualizacao'
+          criadoEm: new Date().toISOString(),
+          ativo: true
+        };
+        
+        await setDoc(doc(db, 'notificacoes', Date.now().toString()), novaNotif);
+        alert('✅ Notificação enviada para todos os usuários!');
+        await loadNotificacoes();
+        render();
+      } catch (e) {
+        console.error('Erro ao enviar notificação:', e);
+        alert('❌ Erro ao enviar notificação');
       }
     }
 
@@ -930,6 +1005,13 @@
                 </div>
                 <button type="submit" class="w-full bg-blue-500 text-white py-3 rounded hover:bg-blue-600 font-medium">Entrar</button>
               </form>
+              
+              <div class="mt-4 text-center">
+                <button id="forgot-password-btn" class="text-sm text-blue-600 hover:text-blue-700 hover:underline">
+                  Esqueci minha senha
+                </button>
+              </div>
+              
               <div class="mt-6 text-center">
                 <p class="text-sm text-gray-600">
                   Comprou o Totaliz? 
@@ -1002,6 +1084,27 @@
           render();
         });
       });
+      
+      // Esqueci minha senha
+      const forgotPasswordBtn = document.getElementById('forgot-password-btn');
+      if (forgotPasswordBtn) {
+        forgotPasswordBtn.addEventListener('click', async () => {
+          const email = prompt('Digite seu email para receber o link de redefinição de senha:');
+          if (!email) return;
+          
+          try {
+            await sendPasswordResetEmail(auth, email);
+            alert('✅ Email enviado! Verifique sua caixa de entrada.');
+          } catch (error) {
+            console.error('Erro ao enviar email:', error);
+            if (error.code === 'auth/user-not-found') {
+              alert('❌ Email não encontrado.');
+            } else {
+              alert('❌ Erro ao enviar email. Tente novamente.');
+            }
+          }
+        });
+      }
     }
 
     function render() {
@@ -1086,6 +1189,7 @@
 
         ${state.showModal ? renderModal() : ''}
         ${state.showSupportModal ? renderSupportModal() : ''}
+        ${state.showNotificacoesModal ? renderNotificacoesModal() : ''}
         
         <!-- Rodapé com Links de Documentação -->
         <footer class="bg-gray-800 text-white py-8 mt-12">
@@ -1280,7 +1384,7 @@
         });
 
         
-        // ===== PRAS - RISCAR ITENS =====
+        // ===== LISTA DE COMPRAS - RISCAR ITENS =====
         
         // Listener para riscar itens marcados
         const checkboxesCompras = document.querySelectorAll('[data-insumo-check]');
@@ -1460,6 +1564,67 @@
         </div>
       `;
     }
+    
+    function renderNotificacoesModal() {
+      const notifLidasDoc = state.user ? [] : []; // Placeholder, dados já carregados
+      
+      async function getNotifIcon(tipo) {
+        const icons = {
+          'novidade': '🎉',
+          'dica': '💡',
+          'atualizacao': '🔄'
+        };
+        return icons[tipo] || '📢';
+      }
+      
+      return `
+        <div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div class="bg-white rounded-lg shadow-2xl max-w-2xl w-full max-h-[80vh] flex flex-col">
+            <!-- Header -->
+            <div class="flex justify-between items-center p-6 border-b">
+              <h2 class="text-2xl font-bold text-gray-800">🔔 Notificações</h2>
+              <button data-action="close-notificacoes" class="text-gray-400 hover:text-gray-600 text-2xl">×</button>
+            </div>
+            
+            <!-- Corpo -->
+            <div class="flex-1 overflow-y-auto p-6">
+              ${state.notificacoesApp.length === 0 ? `
+                <div class="text-center py-12">
+                  <p class="text-6xl mb-4">🔕</p>
+                  <p class="text-gray-500">Nenhuma notificação ainda</p>
+                </div>
+              ` : `
+                <div class="space-y-3">
+                  ${state.notificacoesApp.map(notif => {
+                    const icon = notif.tipo === 'novidade' ? '🎉' : notif.tipo === 'dica' ? '💡' : '🔄';
+                    const bgColor = notif.tipo === 'novidade' ? 'bg-blue-50 border-blue-200' : 
+                                    notif.tipo === 'dica' ? 'bg-yellow-50 border-yellow-200' : 
+                                    'bg-purple-50 border-purple-200';
+                    
+                    return `
+                      <div 
+                        class="p-4 rounded-lg border ${bgColor} hover:shadow-md transition cursor-pointer"
+                        data-action="ler-notificacao"
+                        data-notif-id="${notif.id}"
+                      >
+                        <div class="flex gap-3">
+                          <div class="text-3xl">${icon}</div>
+                          <div class="flex-1">
+                            <h3 class="font-bold text-gray-800 mb-1">${notif.titulo}</h3>
+                            <p class="text-sm text-gray-600">${notif.mensagem}</p>
+                            <p class="text-xs text-gray-400 mt-2">${new Date(notif.criadoEm).toLocaleDateString('pt-BR', {day: '2-digit', month: 'short', year: 'numeric'})}</p>
+                          </div>
+                        </div>
+                      </div>
+                    `;
+                  }).join('')}
+                </div>
+              `}
+            </div>
+          </div>
+        </div>
+      `;
+    }
 
     function renderContent() {
       switch(state.activeTab) {
@@ -1486,9 +1651,25 @@
       const faturamento = vendasHoje.reduce((t, v) => t + (v.valorFinal || 0), 0);
       
       return `
-        <div class="text-center mb-6">
+        <div class="relative text-center mb-6">
           <h2 class="text-3xl font-bold mb-2">${state.nomeEmpresa}</h2>
           <p class="text-sm text-gray-500">Sistema de Gestão</p>
+          
+          <!-- Sininho de Notificações -->
+          <button 
+            data-action="open-notificacoes"
+            class="absolute top-0 right-0 p-2 hover:bg-gray-100 rounded-full transition"
+            title="Notificações"
+          >
+            <div class="relative">
+              <span class="text-2xl">🔔</span>
+              ${state.notificacoesNaoLidas > 0 ? `
+                <span class="absolute -top-1 -right-1 bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
+                  ${state.notificacoesNaoLidas > 9 ? '9+' : state.notificacoesNaoLidas}
+                </span>
+              ` : ''}
+            </div>
+          </button>
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
@@ -2432,7 +2613,7 @@
       const insumosFaltando = state.insumos.filter(i => i.quantidade <= i.estoqueMinimo).sort((a, b) => a.nome.localeCompare(b.nome));
       
       return `
-        <h2 class="text-2xl font-bold mb-4">🛒 Lista de Compras</h2>
+        <<h2 class="text-2xl font-bold mb-4">🛒 Lista de Compras</h2>
         
         ${insumosFaltando.length > 0 ? `
           <div class="bg-yellow-50 border border-yellow-200 p-4 rounded-lg mb-4">
@@ -2575,6 +2756,37 @@
                   </div>
                 </div>
                 
+                <div>
+                  <label class="block text-sm font-medium mb-3 text-gray-700">🔒 Alterar Senha</label>
+                  <p class="text-xs text-gray-500 mb-3">Para sua segurança, recomendamos alterar a senha periodicamente</p>
+                  <div class="space-y-3">
+                    <div>
+                      <label class="block text-xs font-medium mb-1 text-gray-600">Nova Senha</label>
+                      <input 
+                        type="password" 
+                        id="nova-senha" 
+                        class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
+                        placeholder="Mínimo 6 caracteres"
+                      >
+                    </div>
+                    <div>
+                      <label class="block text-xs font-medium mb-1 text-gray-600">Confirmar Nova Senha</label>
+                      <input 
+                        type="password" 
+                        id="confirmar-senha" 
+                        class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
+                        placeholder="Digite novamente"
+                      >
+                    </div>
+                    <button 
+                      data-action="alterar-senha" 
+                      class="bg-orange-500 text-white px-4 py-2 rounded-lg hover:bg-orange-600 text-sm font-medium transition"
+                    >
+                      🔄 Alterar Senha
+                    </button>
+                  </div>
+                </div>
+                
                 <button 
                   data-action="salvar-config" 
                   class="w-full bg-blue-500 text-white py-3 rounded-lg hover:bg-blue-600 font-bold transition"
@@ -2653,6 +2865,53 @@
                 </button>
               </div>
             ` : ''}
+          </div>
+          
+          <!-- Enviar Notificação Global -->
+          <div class="bg-gradient-to-r from-blue-500 to-indigo-600 text-white p-6 rounded-lg mb-6">
+            <h3 class="text-xl font-bold mb-2">🔔 Enviar Notificação para Todos</h3>
+            <p class="opacity-90 mb-4">Avisos aparecem no sininho do app de todos os clientes</p>
+            
+            <div class="space-y-3">
+              <div>
+                <label class="block text-sm mb-2">Tipo:</label>
+                <select 
+                  id="notif-tipo" 
+                  class="bg-white text-gray-900 px-4 py-2 rounded-lg w-full"
+                >
+                  <option value="novidade">🎉 Novidade</option>
+                  <option value="dica">💡 Dica</option>
+                  <option value="atualizacao">🔄 Atualização</option>
+                </select>
+              </div>
+              
+              <div>
+                <label class="block text-sm mb-2">Título:</label>
+                <input 
+                  type="text" 
+                  id="notif-titulo" 
+                  placeholder="Ex: Nova funcionalidade disponível!"
+                  class="bg-white text-gray-900 px-4 py-2 rounded-lg w-full"
+                >
+              </div>
+              
+              <div>
+                <label class="block text-sm mb-2">Mensagem:</label>
+                <textarea 
+                  id="notif-mensagem" 
+                  rows="3"
+                  placeholder="Ex: Agora você pode criar receitas com múltiplos produtos!"
+                  class="bg-white text-gray-900 px-4 py-2 rounded-lg w-full"
+                ></textarea>
+              </div>
+              
+              <button 
+                data-action="enviar-notificacao" 
+                class="bg-white text-blue-600 px-6 py-3 rounded-lg font-bold hover:bg-blue-50 transition w-full"
+              >
+                📤 Enviar para Todos
+              </button>
+            </div>
           </div>
           
           <!-- Gerenciar Clientes -->
@@ -2832,13 +3091,22 @@
           <div class="space-y-3">
             <div>
               <label class="block text-sm mb-1">Nome da Receita</label>
-              <input type="text" id="nomeReceita" class="w-full border rounded px-3 py-2" value="${r ? r.nome : ''}">
+              <input type="text" id="nomeReceita" class="w-full border rounded px-3 py-2" value="${r ? r.nome : ''}" placeholder="Ex: Base Doce de Leite">
             </div>
+            
             <div>
               <label class="block text-sm font-medium mb-2">Ingredientes</label>
               <div id="ingredientes-list" class="space-y-2"></div>
               <button type="button" data-action="add-ingrediente" class="mt-2 text-sm text-blue-500 hover:text-blue-600">+ Adicionar Ingrediente</button>
             </div>
+            
+            <div class="border-t pt-3">
+              <label class="block text-sm font-medium mb-2">🎯 Produtos que esta receita gera</label>
+              <p class="text-xs text-gray-500 mb-3">Adicione os produtos finais que serão gerados ao executar esta receita</p>
+              <div id="produtos-gerados-list" class="space-y-2"></div>
+              <button type="button" data-action="add-produto-gerado" class="mt-2 text-sm text-green-600 hover:text-green-700">+ Adicionar Produto</button>
+            </div>
+            
             <div class="flex gap-2">
               <button data-action="save-receita" class="flex-1 bg-blue-500 text-white rounded py-2">Salvar</button>
               <button data-action="close-modal" class="flex-1 bg-gray-300 rounded py-2">Cancelar</button>
@@ -2868,25 +3136,42 @@
             <div>
               <label class="block text-sm mb-1">Lotes</label>
               <input type="number" step="0.01" id="lotes" class="w-full border rounded px-3 py-2" value="1">
+              <p class="text-xs text-gray-500 mt-1">Multiplicador da receita (ex: 2 lotes = dobro dos ingredientes)</p>
             </div>
-            <div>
-              <label class="block text-sm mb-1">${ehIntermediario ? 'Quantidade Produzida' : 'Rendimento (unidades)'}</label>
-              <input type="number" step="${ehIntermediario ? '0.01' : '1'}" id="rendimento" class="w-full border rounded px-3 py-2" placeholder="${ehIntermediario ? 'Ex: 1000' : 'Ex: 12'}">
+            
+            <div id="produtos-producao-container" class="hidden">
+              <div class="border-t pt-3">
+                <label class="block text-sm font-medium mb-2">Produtos a Gerar</label>
+                <p class="text-xs text-gray-500 mb-2">Defina a quantidade de cada produto</p>
+                <div id="produtos-producao-list" class="space-y-2"></div>
+              </div>
             </div>
+            
             ${ehIntermediario ? `
-              <div>
-                <label class="block text-sm mb-1">Unidade de Medida</label>
-                <select id="unidadeIntermediario" class="w-full border rounded px-3 py-2">
-                  ${getUnidadesAtivas().map(val => `<option value="${val}">${val}</option>`).join('')}
-                </select>
+              <div id="producao-unica-container">
+                <div>
+                  <label class="block text-sm mb-1">Quantidade Produzida</label>
+                  <input type="number" step="0.01" id="rendimento" class="w-full border rounded px-3 py-2" placeholder="Ex: 1000">
+                </div>
+                <div>
+                  <label class="block text-sm mb-1">Unidade de Medida</label>
+                  <select id="unidadeIntermediario" class="w-full border rounded px-3 py-2">
+                    ${getUnidadesAtivas().map(val => `<option value="${val}">${val}</option>`).join('')}
+                  </select>
+                </div>
               </div>
             ` : ''}
+            
             ${!ehIntermediario ? `
-              <div>
-                <label class="block text-sm mb-1">Preço de Venda (R$)</label>
-                <input type="number" step="0.01" id="precoVenda" class="w-full border rounded px-3 py-2">
+              <div id="preco-venda-container" class="hidden">
+                <div>
+                  <label class="block text-sm mb-1">Preço de Venda (R$)</label>
+                  <input type="number" step="0.01" id="precoVenda" class="w-full border rounded px-3 py-2">
+                  <p class="text-xs text-gray-500 mt-1">Será aplicado a todos os produtos gerados</p>
+                </div>
               </div>
             ` : ''}
+            
             <div class="flex gap-2">
               <button data-action="save-producao" data-tipo="${tipoProducao}" class="flex-1 ${ehIntermediario ? 'bg-purple-500' : 'bg-orange-500'} text-white rounded py-2">Produzir</button>
               <button data-action="close-modal" class="flex-1 bg-gray-300 rounded py-2">Cancelar</button>
@@ -3415,6 +3700,59 @@
         });
       });
       
+      // ===== NOTIFICAÇÕES =====
+      
+      // Abrir modal de notificações
+      document.querySelectorAll('[data-action="open-notificacoes"]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          state.showNotificacoesModal = true;
+          render();
+        });
+      });
+      
+      // Fechar modal de notificações
+      document.querySelectorAll('[data-action="close-notificacoes"]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          state.showNotificacoesModal = false;
+          render();
+        });
+      });
+      
+      // Ler notificação (marcar como lida)
+      document.querySelectorAll('[data-action="ler-notificacao"]').forEach(elem => {
+        elem.addEventListener('click', async () => {
+          const notifId = elem.dataset.notifId;
+          await marcarNotificacaoComoLida(notifId);
+        });
+      });
+      
+      // Enviar notificação global (admin)
+      document.querySelectorAll('[data-action="enviar-notificacao"]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const tipo = document.getElementById('notif-tipo')?.value;
+          const titulo = document.getElementById('notif-titulo')?.value;
+          const mensagem = document.getElementById('notif-mensagem')?.value;
+          
+          if (!titulo || !mensagem) {
+            return alert('⚠️ Preencha título e mensagem');
+          }
+          
+          if (confirm(`Enviar notificação para TODOS os clientes?\n\nTítulo: ${titulo}\nMensagem: ${mensagem}`)) {
+            btn.textContent = '⏳ Enviando...';
+            btn.disabled = true;
+            
+            await enviarNotificacaoGlobal(titulo, mensagem, tipo);
+            
+            // Limpar campos
+            document.getElementById('notif-titulo').value = '';
+            document.getElementById('notif-mensagem').value = '';
+            
+            btn.textContent = '📤 Enviar para Todos';
+            btn.disabled = false;
+          }
+        });
+      });
+      
       // Toggle assinatura paga
       document.querySelectorAll('[data-action="admin-toggle-pago"]').forEach(btn => {
         btn.addEventListener('click', async (e) => {
@@ -3851,8 +4189,10 @@
       function setupReceitaModal() {
         const receita = state.editingId ? state.receitas.find(r => r.id == state.editingId) : null;
         ingredientesReceita = receita ? JSON.parse(JSON.stringify(receita.ingredientes)) : [];
+        variacoesReceita = receita && receita.variacoes ? JSON.parse(JSON.stringify(receita.variacoes)) : [];
         
         renderIngredientesReceita();
+        renderVariacoesReceita();
 
         document.querySelectorAll('[data-action="add-ingrediente"]').forEach(btn => {
           btn.onclick = () => {
@@ -3860,11 +4200,18 @@
             renderIngredientesReceita();
           };
         });
+        
+        document.querySelectorAll('[data-action="add-produto-gerado"]').forEach(btn => {
+          btn.onclick = () => {
+            variacoesReceita.push({nome: '', extras: []});
+            renderVariacoesReceita();
+          };
+        });
 
         document.querySelectorAll('[data-action="save-receita"]').forEach(btn => {
           btn.onclick = async () => {
             const nome = document.getElementById('nomeReceita').value;
-            if (!nome || ingredientesReceita.length === 0) return alert('Preencha nome e ingredientes');
+            if (!nome || ingredientesReceita.length === 0) return alert('Preencha nome e ingredientes da base');
 
             const custo = ingredientesReceita.reduce((t, ing) => {
               const ins = state.insumos.find(i => i.id == ing.insumoId);
@@ -3885,6 +4232,14 @@
                   unidade: i.unidade || '',
                   tipo: i.tipo
                 }));
+                receita.variacoes = variacoesReceita.map(v => ({
+                  nome: v.nome,
+                  extras: (v.extras || []).map(e => ({
+                    insumoId: parseInt(e.insumoId),
+                    qtdPorUnidade: parseFloat(e.qtdPorUnidade),
+                    unidade: e.unidade
+                  }))
+                }));
                 receita.custoTotal = custo;
                 await saveToFirebase('receitas', receita.id, receita);
               }
@@ -3898,13 +4253,23 @@
                   unidade: i.unidade || '',
                   tipo: i.tipo
                 })),
-                custoTotal: custo
+                variacoes: variacoesReceita.map(v => ({
+                  nome: v.nome,
+                  extras: (v.extras || []).map(e => ({
+                    insumoId: parseInt(e.insumoId),
+                    qtdPorUnidade: parseFloat(e.qtdPorUnidade),
+                    unidade: e.unidade
+                  }))
+                })),
+                custoTotal: custo,
+                userId: state.user.uid
               };
               await saveToFirebase('receitas', novaReceita.id, novaReceita);
               state.receitas.push(novaReceita);
             }
 
             ingredientesReceita = [];
+            variacoesReceita = [];
             state.showModal = false;
             state.editingId = null;
             render();
@@ -3967,78 +4332,440 @@
         });
       }
 
+      // ===== VARIAÇÕES DA RECEITA =====
+      let variacoesReceita = [];
+      
+      function renderVariacoesReceita() {
+        const list = document.getElementById('produtos-gerados-list');
+        if (!list) return;
+
+        if (variacoesReceita.length === 0) {
+          list.innerHTML = `
+            <div class="text-center py-4 bg-gray-50 rounded border border-dashed border-gray-300">
+              <p class="text-sm text-gray-500">Nenhuma variação adicionada</p>
+              <p class="text-xs text-gray-400 mt-1">Clique em "+ Adicionar Produto" abaixo</p>
+            </div>
+          `;
+          return;
+        }
+
+        list.innerHTML = variacoesReceita.map((variacao, varIdx) => `
+          <div class="border border-green-200 rounded-lg p-3 bg-green-50 space-y-2">
+            <div class="flex gap-2 items-center">
+              <input 
+                type="text" 
+                placeholder="Nome da variação (ex: Doce de Leite com Creme)"
+                class="flex-1 border rounded px-2 py-1 text-sm font-medium"
+                data-var-field="nome"
+                data-var-index="${varIdx}"
+                value="${variacao.nome || ''}"
+              >
+              <button 
+                type="button" 
+                data-action="remove-variacao" 
+                data-var-index="${varIdx}" 
+                class="text-red-500 hover:text-red-700 px-2"
+              >
+                🗑️
+              </button>
+            </div>
+            
+            <div class="pl-4 border-l-2 border-green-300 space-y-2">
+              <p class="text-xs font-medium text-gray-600">Ingredientes Extras (por unidade):</p>
+              <div id="extras-list-${varIdx}" class="space-y-1"></div>
+              <button 
+                type="button" 
+                data-action="add-extra" 
+                data-var-index="${varIdx}"
+                class="text-xs text-blue-600 hover:text-blue-700"
+              >
+                + Adicionar ingrediente extra
+              </button>
+            </div>
+          </div>
+        `).join('');
+
+        // Renderizar ingredientes extras de cada variação
+        variacoesReceita.forEach((variacao, varIdx) => {
+          renderExtrasVariacao(varIdx);
+        });
+
+        // Event listeners para nome da variação
+        list.querySelectorAll('[data-var-field]').forEach(el => {
+          el.addEventListener('change', (e) => {
+            const idx = parseInt(e.target.dataset.varIndex);
+            const field = e.target.dataset.varField;
+            variacoesReceita[idx][field] = e.target.value;
+          });
+        });
+
+        // Event listeners para remover variação
+        list.querySelectorAll('[data-action="remove-variacao"]').forEach(el => {
+          el.addEventListener('click', (e) => {
+            const idx = parseInt(e.target.dataset.varIndex);
+            variacoesReceita.splice(idx, 1);
+            renderVariacoesReceita();
+          });
+        });
+
+        // Event listeners para adicionar extra
+        list.querySelectorAll('[data-action="add-extra"]').forEach(el => {
+          el.addEventListener('click', (e) => {
+            const varIdx = parseInt(e.target.dataset.varIndex);
+            if (!variacoesReceita[varIdx].extras) variacoesReceita[varIdx].extras = [];
+            variacoesReceita[varIdx].extras.push({
+              insumoId: '',
+              qtdPorUnidade: 0,
+              unidade: ''
+            });
+            renderExtrasVariacao(varIdx);
+          });
+        });
+      }
+
+      function renderExtrasVariacao(varIdx) {
+        const container = document.getElementById(`extras-list-${varIdx}`);
+        if (!container) return;
+
+        const variacao = variacoesReceita[varIdx];
+        const extras = variacao.extras || [];
+
+        if (extras.length === 0) {
+          container.innerHTML = `<p class="text-xs text-gray-400 italic">Nenhum ingrediente extra</p>`;
+          return;
+        }
+
+        container.innerHTML = extras.map((extra, extraIdx) => {
+          const insumo = state.insumos.find(x => x.id == extra.insumoId);
+          const unidadeInsumo = insumo?.unidade || '';
+          const unidadeAtual = extra.unidade || unidadeInsumo;
+          const compativel = insumo ? unidadesCompativeis(unidadeAtual, unidadeInsumo) : true;
+
+          return `
+            <div class="flex gap-1 items-center text-xs ${!compativel ? 'bg-red-50 border border-red-200 rounded p-1' : ''}">
+              <select 
+                class="flex-1 border rounded px-1 py-1 text-xs"
+                data-extra-field="insumoId"
+                data-var-index="${varIdx}"
+                data-extra-index="${extraIdx}"
+              >
+                <option value="">Insumo...</option>
+                ${state.insumos.map(ins => `
+                  <option value="${ins.id}" ${extra.insumoId == ins.id ? 'selected' : ''}>
+                    ${ins.nome} (${ins.unidade})
+                  </option>
+                `).join('')}
+              </select>
+              <input 
+                type="number" 
+                step="0.01" 
+                placeholder="Qtd/un"
+                class="w-16 border rounded px-1 py-1 text-xs"
+                data-extra-field="qtdPorUnidade"
+                data-var-index="${varIdx}"
+                data-extra-index="${extraIdx}"
+                value="${extra.qtdPorUnidade || ''}"
+              >
+              <select 
+                class="w-12 border rounded px-1 py-1 text-xs ${!compativel ? 'border-red-500' : ''}"
+                data-extra-field="unidade"
+                data-var-index="${varIdx}"
+                data-extra-index="${extraIdx}"
+              >
+                ${getUnidadesAtivas().map(val => `
+                  <option value="${val}" ${unidadeAtual === val ? 'selected' : ''}>${val}</option>
+                `).join('')}
+              </select>
+              <button 
+                type="button"
+                data-action="remove-extra"
+                data-var-index="${varIdx}"
+                data-extra-index="${extraIdx}"
+                class="text-red-500 hover:text-red-700 px-1"
+              >
+                ×
+              </button>
+            </div>
+            ${!compativel ? `<p class="text-xs text-red-600">⚠️ Incompatível (${unidadeInsumo})</p>` : ''}
+          `;
+        }).join('');
+
+        // Event listeners para campos dos extras
+        container.querySelectorAll('[data-extra-field]').forEach(el => {
+          el.addEventListener('change', (e) => {
+            const varIdx = parseInt(e.target.dataset.varIndex);
+            const extraIdx = parseInt(e.target.dataset.extraIndex);
+            const field = e.target.dataset.extraField;
+            variacoesReceita[varIdx].extras[extraIdx][field] = e.target.value;
+            
+            // Se mudou o insumo, atualiza a unidade
+            if (field === 'insumoId') {
+              const ins = state.insumos.find(x => x.id == e.target.value);
+              if (ins) variacoesReceita[varIdx].extras[extraIdx].unidade = ins.unidade;
+            }
+            renderExtrasVariacao(varIdx);
+          });
+        });
+
+        // Event listeners para remover extra
+        container.querySelectorAll('[data-action="remove-extra"]').forEach(el => {
+          el.addEventListener('click', (e) => {
+            const varIdx = parseInt(e.target.dataset.varIndex);
+            const extraIdx = parseInt(e.target.dataset.extraIndex);
+            variacoesReceita[varIdx].extras.splice(extraIdx, 1);
+            renderExtrasVariacao(varIdx);
+          });
+        });
+      }
+
       if (state.modalType === 'receita') {
         setupReceitaModal();
+      }
+      
+      // ===== MODAL DE PRODUÇÃO: Listener para receita =====
+      if (state.modalType === 'producao') {
+        const receitaSelect = document.getElementById('receitaId');
+        if (receitaSelect) {
+          receitaSelect.addEventListener('change', (e) => {
+            const receitaId = e.target.value;
+            const receita = state.receitas.find(r => r.id == receitaId);
+            
+            if (!receita) {
+              ocultarVariacoesProducao();
+              return;
+            }
+            
+            // Se tem variações, mostrar campos
+            if (receita.variacoes && receita.variacoes.length > 0) {
+              mostrarVariacoesProducao(receita);
+            } else {
+              ocultarVariacoesProducao();
+            }
+          });
+        }
+      }
+      
+      function mostrarVariacoesProducao(receita) {
+        const container = document.getElementById('produtos-producao-container');
+        const lista = document.getElementById('produtos-producao-list');
+        
+        if (!container || !lista) return;
+        
+        container.classList.remove('hidden');
+        
+        lista.innerHTML = receita.variacoes.map((variacao, idx) => `
+          <div class="flex gap-2 items-center p-2 bg-gray-50 rounded border">
+            <span class="text-sm flex-1 font-medium">${variacao.nome}</span>
+            <input 
+              type="number" 
+              step="1"
+              min="0"
+              class="w-24 border rounded px-2 py-1 text-sm quantidade-variacao-producao" 
+              placeholder="Quantidade"
+              data-variacao-index="${idx}"
+              value="0"
+            >
+            <span class="text-xs text-gray-500">un</span>
+          </div>
+        `).join('');
+      }
+      
+      function ocultarVariacoesProducao() {
+        const container = document.getElementById('produtos-producao-container');
+        if (container) container.classList.add('hidden');
       }
 
       document.querySelectorAll('[data-action="save-producao"]').forEach(btn => {
         btn.addEventListener('click', async () => {
           const receitaId = document.getElementById('receitaId').value;
           const lotes = parseFloat(document.getElementById('lotes').value);
-          const rendimento = parseFloat(document.getElementById('rendimento').value);
           const tipoProducao = btn.dataset.tipo || 'final';
           const ehIntermediario = tipoProducao === 'intermediario';
           
-          const precoVendaInput = document.getElementById('precoVenda');
-          const precoVenda = precoVendaInput ? parseFloat(precoVendaInput.value) : 0;
-          
-          if (!receitaId || !lotes || !rendimento) {
-            return alert('Preencha todos os campos obrigatórios');
-          }
-          
-          if (!ehIntermediario && !precoVenda) {
-            return alert('Preencha o preço de venda');
+          if (!receitaId || !lotes) {
+            return alert('Selecione a receita e defina os lotes');
           }
           
           const receita = state.receitas.find(r => r.id == receitaId);
           if (!receita) return alert('Receita não encontrada');
           
-          let custoTotal = 0;
-          for (let ing of receita.ingredientes) {
-            const insumo = state.insumos.find(i => i.id == ing.insumoId);
-            if (!insumo) continue;
-            const unidadeIng = ing.unidade || insumo.unidade;
-            const qtdBase = ing.tipo === 'por_unidade' ? ing.quantidade * rendimento : ing.quantidade * lotes;
-            const qtdConvertida = converterUnidade(qtdBase, unidadeIng, insumo.unidade);
-            if (qtdConvertida === null) continue;
-            custoTotal += qtdConvertida * insumo.precoMedio;
-          }
+          // ===== VERIFICAR SE TEM VARIAÇÕES =====
+          const temVariacoes = receita.variacoes && receita.variacoes.length > 0;
           
-          const custoUnitario = custoTotal / rendimento;
-          
-          for (let ing of receita.ingredientes) {
-            const insumo = state.insumos.find(i => i.id == ing.insumoId);
-            if (!insumo) continue;
-            const unidadeIng = ing.unidade || insumo.unidade;
-            const qtdBase = ing.tipo === 'por_unidade' ? ing.quantidade * rendimento : ing.quantidade * lotes;
-            const qtdConvertida = converterUnidade(qtdBase, unidadeIng, insumo.unidade);
-            if (qtdConvertida === null) continue;
-            insumo.quantidade -= qtdConvertida;
-            await saveToFirebase('insumos', insumo.id, insumo);
-          }
-          
-          const produtoExistente = state.produtos.find(p => p.receitaId == receita.id && p.ehIntermediario == ehIntermediario);
-          
-          if (produtoExistente) {
-            produtoExistente.quantidade += rendimento;
-            await saveToFirebase('produtos', produtoExistente.id, produtoExistente);
+          if (temVariacoes) {
+            // ===== PRODUÇÃO COM VARIAÇÕES =====
+            const quantidadeInputs = document.querySelectorAll('.quantidade-variacao-producao');
+            const variacoesParaProduzir = [];
+            
+            // Coletar quantidades de cada variação
+            quantidadeInputs.forEach((input, idx) => {
+              const qtd = parseFloat(input.value) || 0;
+              if (qtd > 0) {
+                variacoesParaProduzir.push({
+                  variacao: receita.variacoes[idx],
+                  quantidade: qtd
+                });
+              }
+            });
+            
+            if (variacoesParaProduzir.length === 0) {
+              return alert('Digite a quantidade de pelo menos uma variação');
+            }
+            
+            // 1. DAR BAIXA NOS INGREDIENTES BASE (multiplicado por lotes)
+            for (let ing of receita.ingredientes) {
+              const insumo = state.insumos.find(i => i.id == ing.insumoId);
+              if (!insumo) continue;
+              
+              const unidadeIng = ing.unidade || insumo.unidade;
+              const qtdBase = ing.quantidade * lotes;
+              const qtdConvertida = converterUnidade(qtdBase, unidadeIng, insumo.unidade);
+              
+              if (qtdConvertida === null) {
+                alert(`Erro: unidade ${unidadeIng} incompatível com ${insumo.unidade} no insumo ${insumo.nome}`);
+                return;
+              }
+              
+              if (insumo.quantidade < qtdConvertida) {
+                alert(`Estoque insuficiente de ${insumo.nome}. Necessário: ${qtdConvertida}${insumo.unidade}, Disponível: ${insumo.quantidade}${insumo.unidade}`);
+                return;
+              }
+              
+              insumo.quantidade -= qtdConvertida;
+              await saveToFirebase('insumos', insumo.id, insumo);
+            }
+            
+            // 2. DAR BAIXA NOS INGREDIENTES EXTRAS DE CADA VARIAÇÃO
+            for (let vp of variacoesParaProduzir) {
+              const variacao = vp.variacao;
+              const qtdProduzir = vp.quantidade;
+              
+              if (!variacao.extras || variacao.extras.length === 0) continue;
+              
+              for (let extra of variacao.extras) {
+                const insumo = state.insumos.find(i => i.id == extra.insumoId);
+                if (!insumo) continue;
+                
+                const qtdTotal = extra.qtdPorUnidade * qtdProduzir;
+                const qtdConvertida = converterUnidade(qtdTotal, extra.unidade, insumo.unidade);
+                
+                if (qtdConvertida === null) {
+                  alert(`Erro: unidade ${extra.unidade} incompatível com ${insumo.unidade} no insumo ${insumo.nome}`);
+                  return;
+                }
+                
+                if (insumo.quantidade < qtdConvertida) {
+                  alert(`Estoque insuficiente de ${insumo.nome} para ${variacao.nome}. Necessário: ${qtdConvertida}${insumo.unidade}, Disponível: ${insumo.quantidade}${insumo.unidade}`);
+                  return;
+                }
+                
+                insumo.quantidade -= qtdConvertida;
+                await saveToFirebase('insumos', insumo.id, insumo);
+              }
+            }
+            
+            // 3. ADICIONAR PRODUTOS AO ESTOQUE
+            for (let vp of variacoesParaProduzir) {
+              const nomeProduto = vp.variacao.nome;
+              const qtdProduzir = vp.quantidade;
+              
+              // Buscar se produto já existe
+              const produtoExistente = state.produtos.find(p => 
+                p.nome === nomeProduto && 
+                p.userId === state.user.uid &&
+                !p.ehIntermediario
+              );
+              
+              if (produtoExistente) {
+                produtoExistente.quantidade += qtdProduzir;
+                await saveToFirebase('produtos', produtoExistente.id, produtoExistente);
+              } else {
+                // Criar novo produto
+                const novoProduto = {
+                  id: Date.now() + Math.random(),
+                  nome: nomeProduto,
+                  quantidade: qtdProduzir,
+                  unidade: 'un',
+                  custoUnitario: 0, // Usuario define depois
+                  precoVenda: 0, // Usuario define depois
+                  estoqueMinimo: 10,
+                  receitaId: receita.id,
+                  ehIntermediario: false,
+                  userId: state.user.uid
+                };
+                await saveToFirebase('produtos', novoProduto.id, novoProduto);
+                state.produtos.push(novoProduto);
+              }
+            }
+            
+            alert('✅ Produção concluída! Produtos adicionados ao estoque.');
+            state.showModal = false;
+            await loadAllData();
+            render();
+            
           } else {
-            const novoProduto = {
-              id: Date.now(),
-              receitaId: receita.id,
-              nome: receita.nome,
-              quantidade: rendimento,
-              custoUnitario,
-              precoVenda: ehIntermediario ? custoUnitario : precoVenda,
-              estoqueMinimo: 10,
-              ehIntermediario: ehIntermediario
-            };
-            await saveToFirebase('produtos', novoProduto.id, novoProduto);
-            state.produtos.push(novoProduto);
+            // ===== PRODUÇÃO ANTIGA (SEM VARIAÇÕES) =====
+            const rendimento = parseFloat(document.getElementById('rendimento')?.value);
+            const precoVendaInput = document.getElementById('precoVenda');
+            const precoVenda = precoVendaInput ? parseFloat(precoVendaInput.value) : 0;
+            
+            if (!rendimento) {
+              return alert('Preencha o rendimento');
+            }
+            
+            if (!ehIntermediario && !precoVenda) {
+              return alert('Preencha o preço de venda');
+            }
+            
+            let custoTotal = 0;
+            for (let ing of receita.ingredientes) {
+              const insumo = state.insumos.find(i => i.id == ing.insumoId);
+              if (!insumo) continue;
+              const unidadeIng = ing.unidade || insumo.unidade;
+              const qtdBase = ing.tipo === 'por_unidade' ? ing.quantidade * rendimento : ing.quantidade * lotes;
+              const qtdConvertida = converterUnidade(qtdBase, unidadeIng, insumo.unidade);
+              if (qtdConvertida === null) continue;
+              custoTotal += qtdConvertida * insumo.precoMedio;
+            }
+            
+            const custoUnitario = custoTotal / rendimento;
+            
+            for (let ing of receita.ingredientes) {
+              const insumo = state.insumos.find(i => i.id == ing.insumoId);
+              if (!insumo) continue;
+              const unidadeIng = ing.unidade || insumo.unidade;
+              const qtdBase = ing.tipo === 'por_unidade' ? ing.quantidade * rendimento : ing.quantidade * lotes;
+              const qtdConvertida = converterUnidade(qtdBase, unidadeIng, insumo.unidade);
+              if (qtdConvertida === null) continue;
+              insumo.quantidade -= qtdConvertida;
+              await saveToFirebase('insumos', insumo.id, insumo);
+            }
+            
+            const produtoExistente = state.produtos.find(p => p.receitaId == receita.id && p.ehIntermediario == ehIntermediario);
+            
+            if (produtoExistente) {
+              produtoExistente.quantidade += rendimento;
+              await saveToFirebase('produtos', produtoExistente.id, produtoExistente);
+            } else {
+              const novoProduto = {
+                id: Date.now(),
+                receitaId: receita.id,
+                nome: receita.nome,
+                quantidade: rendimento,
+                custoUnitario,
+                precoVenda: ehIntermediario ? custoUnitario : precoVenda,
+                estoqueMinimo: 10,
+                ehIntermediario: ehIntermediario,
+                userId: state.user.uid
+              };
+              await saveToFirebase('produtos', novoProduto.id, novoProduto);
+              state.produtos.push(novoProduto);
+            }
+            
+            state.showModal = false;
+            await loadAllData();
+            render();
           }
-          
-          state.showModal = false;
-          await loadAllData();
         });
       });
 
@@ -4122,6 +4849,43 @@
             render();
           } else {
             alert('❌ Erro ao salvar configurações. Tente novamente.');
+          }
+        });
+      });
+      
+      // Alterar senha
+      document.querySelectorAll('[data-action="alterar-senha"]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const novaSenha = document.getElementById('nova-senha')?.value;
+          const confirmarSenha = document.getElementById('confirmar-senha')?.value;
+          
+          if (!novaSenha || !confirmarSenha) {
+            alert('⚠️ Preencha ambos os campos de senha');
+            return;
+          }
+          
+          if (novaSenha.length < 6) {
+            alert('⚠️ A senha deve ter no mínimo 6 caracteres');
+            return;
+          }
+          
+          if (novaSenha !== confirmarSenha) {
+            alert('⚠️ As senhas não coincidem');
+            return;
+          }
+          
+          try {
+            await updatePassword(auth.currentUser, novaSenha);
+            alert('✅ Senha alterada com sucesso!');
+            document.getElementById('nova-senha').value = '';
+            document.getElementById('confirmar-senha').value = '';
+          } catch (error) {
+            console.error('Erro ao alterar senha:', error);
+            if (error.code === 'auth/requires-recent-login') {
+              alert('⚠️ Por segurança, você precisa fazer login novamente antes de alterar a senha. Saia e entre novamente, depois tente alterar.');
+            } else {
+              alert('❌ Erro ao alterar senha. Tente novamente.');
+            }
           }
         });
       });
