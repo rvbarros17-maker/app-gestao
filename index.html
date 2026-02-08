@@ -52,6 +52,7 @@
       caixaAtual: null,
       despesasRecorrentes: [],
       inventario: [],
+      producoes: [],
       showModal: false,
       modalType: '',
       editingId: null,
@@ -580,7 +581,7 @@
       render();
       
       try {
-        const [insumos, receitas, produtos, clientes, vendas, movimentacoes, caixas, despesasRecorrentes, inventario] = await Promise.all([
+        const [insumos, receitas, produtos, clientes, vendas, movimentacoes, caixas, despesasRecorrentes, inventario, producoes] = await Promise.all([
           loadFromFirebase('insumos'),
           loadFromFirebase('receitas'),
           loadFromFirebase('produtos'),
@@ -589,7 +590,8 @@
           loadFromFirebase('movimentacoes'),
           loadFromFirebase('caixas'),
           loadFromFirebase('despesasRecorrentes'),
-          loadFromFirebase('inventario')
+          loadFromFirebase('inventario'),
+          loadFromFirebase('producoes')
         ]);
 
         state.insumos = insumos;
@@ -601,6 +603,7 @@
         state.caixas = caixas;
         state.despesasRecorrentes = despesasRecorrentes;
         state.inventario = inventario;
+        state.producoes = producoes;
         
         // Verificar se há caixa aberto
         state.caixaAtual = caixas.find(c => c.status === 'aberto') || null;
@@ -1668,6 +1671,7 @@
         case 'lista-compras': return renderListaCompras();
         case 'configuracoes': return renderConfiguracoes();
         case 'inventario': return renderInventario();
+        case 'historico-producao': return renderHistoricoProducao();
         case 'admin': return renderAdmin();
         default: return '<p>Selecione uma aba</p>';
       }
@@ -1771,6 +1775,12 @@
             <div class="text-5xl mb-3">🏭</div>
             <h3 class="text-xl font-bold mb-2">Inventário</h3>
             <p class="text-sm opacity-90">${state.inventario.length} itens cadastrados</p>
+          </button>
+          
+          <button data-nav="historico-producao" class="bg-gradient-to-br from-amber-500 to-amber-600 text-white p-6 rounded-lg shadow-lg hover:shadow-xl transition-all hover:scale-105">
+            <div class="text-5xl mb-3">📜</div>
+            <h3 class="text-xl font-bold mb-2">Histórico de Produção</h3>
+            <p class="text-sm opacity-90">${state.producoes.length} produções registradas</p>
           </button>
           
           ${state.isAdmin ? `
@@ -2975,6 +2985,93 @@
       `;
     }
     
+    // ===== HISTÓRICO DE PRODUÇÃO =====
+    function renderHistoricoProducao() {
+      const producoesOrdenadas = [...state.producoes].sort((a, b) => new Date(b.data) - new Date(a.data));
+      const totalProducoes = producoesOrdenadas.length;
+      const custoTotalGeral = producoesOrdenadas.reduce((total, p) => total + (p.custoTotal || 0), 0);
+      
+      return `
+        <div class="bg-white rounded-lg shadow p-6">
+          <div class="flex justify-between items-center mb-6">
+            <div>
+              <h2 class="text-3xl font-bold">📜 Histórico de Produção</h2>
+              <p class="text-gray-600 mt-1">Registro completo de todas as produções realizadas</p>
+            </div>
+          </div>
+          
+          <!-- Resumo -->
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+            <div class="bg-gradient-to-br from-amber-500 to-amber-600 text-white p-4 rounded-lg">
+              <p class="text-sm opacity-90">Total de Produções</p>
+              <p class="text-3xl font-bold">${totalProducoes}</p>
+            </div>
+            <div class="bg-gradient-to-br from-orange-500 to-orange-600 text-white p-4 rounded-lg">
+              <p class="text-sm opacity-90">Custo Total Investido</p>
+              <p class="text-3xl font-bold">R$ ${custoTotalGeral.toFixed(2)}</p>
+            </div>
+          </div>
+          
+          ${totalProducoes === 0 ? `
+            <div class="text-center py-20">
+              <div class="text-6xl mb-4">📜</div>
+              <p class="text-gray-500 text-lg">Nenhuma produção registrada ainda</p>
+              <p class="text-gray-400 text-sm mt-2">As produções aparecerão aqui automaticamente</p>
+            </div>
+          ` : `
+            <div class="overflow-x-auto">
+              <table class="w-full">
+                <thead class="bg-gray-50">
+                  <tr>
+                    <th class="px-4 py-3 text-left text-sm font-medium">Data/Hora</th>
+                    <th class="px-4 py-3 text-left text-sm font-medium">Receita</th>
+                    <th class="px-4 py-3 text-left text-sm font-medium">Produtos Gerados</th>
+                    <th class="px-4 py-3 text-left text-sm font-medium">Custo Total</th>
+                    <th class="px-4 py-3 text-left text-sm font-medium">Custo Unit.</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${producoesOrdenadas.map(p => {
+                    const dataFormatada = new Date(p.data).toLocaleString('pt-BR', {
+                      day: '2-digit',
+                      month: '2-digit',
+                      year: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit'
+                    });
+                    
+                    return `
+                      <tr class="border-t hover:bg-gray-50">
+                        <td class="px-4 py-3 text-sm">${dataFormatada}</td>
+                        <td class="px-4 py-3">
+                          <span class="font-medium">${p.receitaNome}</span>
+                          <span class="text-xs text-gray-500 ml-2">(${p.lotes} lote${p.lotes > 1 ? 's' : ''})</span>
+                        </td>
+                        <td class="px-4 py-3">
+                          <div class="text-sm space-y-1">
+                            ${p.produtosGerados.map(prod => `
+                              <div class="flex items-center gap-2">
+                                <span class="font-medium text-green-600">${prod.quantidade}x</span>
+                                <span>${prod.nome}</span>
+                              </div>
+                            `).join('')}
+                          </div>
+                        </td>
+                        <td class="px-4 py-3 font-medium">R$ ${(p.custoTotal || 0).toFixed(2)}</td>
+                        <td class="px-4 py-3 text-sm text-gray-600">
+                          ${p.custoUnitario ? `R$ ${p.custoUnitario.toFixed(2)}` : '-'}
+                        </td>
+                      </tr>
+                    `;
+                  }).join('')}
+                </tbody>
+              </table>
+            </div>
+          `}
+        </div>
+      `;
+    }
+    
     function renderAdmin() {
       if (!state.isAdmin) {
         return `
@@ -3316,8 +3413,24 @@
               </div>
             </div>
             
+            <!-- Campos para receita SEM variações (produto único) -->
+            <div id="producao-unica-container" class="hidden">
+              <div>
+                <label class="block text-sm mb-1">Rendimento (Quantidade Produzida)</label>
+                <input type="number" step="0.01" id="rendimentoUnico" class="w-full border rounded px-3 py-2" placeholder="Ex: 10">
+                <p class="text-xs text-gray-500 mt-1">Quantas unidades do produto você vai produzir</p>
+              </div>
+              ${!ehIntermediario ? `
+                <div>
+                  <label class="block text-sm mb-1">Preço de Venda (R$)</label>
+                  <input type="number" step="0.01" id="precoVendaUnico" class="w-full border rounded px-3 py-2" placeholder="Ex: 8.00">
+                  <p class="text-xs text-gray-500 mt-1">Preço unitário de venda</p>
+                </div>
+              ` : ''}
+            </div>
+            
             ${ehIntermediario ? `
-              <div id="producao-unica-container">
+              <div id="producao-intermediario-container">
                 <div>
                   <label class="block text-sm mb-1">Quantidade Produzida</label>
                   <input type="number" step="0.01" id="rendimento" class="w-full border rounded px-3 py-2" placeholder="Ex: 1000">
@@ -3327,16 +3440,6 @@
                   <select id="unidadeIntermediario" class="w-full border rounded px-3 py-2">
                     ${getUnidadesAtivas().map(val => `<option value="${val}">${val}</option>`).join('')}
                   </select>
-                </div>
-              </div>
-            ` : ''}
-            
-            ${!ehIntermediario ? `
-              <div id="preco-venda-container" class="hidden">
-                <div>
-                  <label class="block text-sm mb-1">Preço de Venda (R$)</label>
-                  <input type="number" step="0.01" id="precoVenda" class="w-full border rounded px-3 py-2">
-                  <p class="text-xs text-gray-500 mt-1">Será aplicado a todos os produtos gerados</p>
                 </div>
               </div>
             ` : ''}
@@ -4865,14 +4968,18 @@
             
             if (!receita) {
               ocultarVariacoesProducao();
+              ocultarProducaoUnica();
               return;
             }
             
-            // Se tem variações, mostrar campos
+            // Se tem variações, mostrar campos de variações
             if (receita.variacoes && receita.variacoes.length > 0) {
               mostrarVariacoesProducao(receita);
+              ocultarProducaoUnica();
             } else {
+              // Se NÃO tem variações, mostrar campos de produto único
               ocultarVariacoesProducao();
+              mostrarProducaoUnica();
             }
           });
         }
@@ -4905,6 +5012,16 @@
       
       function ocultarVariacoesProducao() {
         const container = document.getElementById('produtos-producao-container');
+        if (container) container.classList.add('hidden');
+      }
+      
+      function mostrarProducaoUnica() {
+        const container = document.getElementById('producao-unica-container');
+        if (container) container.classList.remove('hidden');
+      }
+      
+      function ocultarProducaoUnica() {
+        const container = document.getElementById('producao-unica-container');
         if (container) container.classList.add('hidden');
       }
 
@@ -5031,25 +5148,43 @@
               }
             }
             
+            // SALVAR HISTÓRICO DE PRODUÇÃO
+            const historico = {
+              id: Date.now(),
+              data: new Date().toISOString(),
+              receitaId: receita.id,
+              receitaNome: receita.nome,
+              lotes,
+              tipo: 'variacoes',
+              produtosGerados: variacoesParaProduzir.map(vp => ({
+                nome: vp.variacao.nome,
+                quantidade: vp.quantidade
+              })),
+              custoTotal: receita.custoTotal * lotes,
+              userId: state.user.uid
+            };
+            await saveToFirebase('producoes', historico.id, historico);
+            state.producoes.push(historico);
+            
             alert('✅ Produção concluída! Produtos adicionados ao estoque.');
             state.showModal = false;
             await loadAllData();
             render();
             
           } else {
-            // ===== PRODUÇÃO ANTIGA (SEM VARIAÇÕES) =====
-            const rendimento = parseFloat(document.getElementById('rendimento')?.value);
-            const precoVendaInput = document.getElementById('precoVenda');
-            const precoVenda = precoVendaInput ? parseFloat(precoVendaInput.value) : 0;
+            // ===== PRODUÇÃO SEM VARIAÇÕES (PRODUTO ÚNICO) =====
+            const rendimento = parseFloat(document.getElementById('rendimentoUnico')?.value || document.getElementById('rendimento')?.value);
+            const precoVenda = parseFloat(document.getElementById('precoVendaUnico')?.value);
             
             if (!rendimento) {
-              return alert('Preencha o rendimento');
+              return alert('Preencha o rendimento (quantidade produzida)');
             }
             
             if (!ehIntermediario && !precoVenda) {
               return alert('Preencha o preço de venda');
             }
             
+            // Calcular custo total
             let custoTotal = 0;
             for (let ing of receita.ingredientes) {
               const insumo = state.insumos.find(i => i.id == ing.insumoId);
@@ -5063,6 +5198,7 @@
             
             const custoUnitario = custoTotal / rendimento;
             
+            // Dar baixa nos ingredientes
             for (let ing of receita.ingredientes) {
               const insumo = state.insumos.find(i => i.id == ing.insumoId);
               if (!insumo) continue;
@@ -5070,14 +5206,25 @@
               const qtdBase = ing.tipo === 'por_unidade' ? ing.quantidade * rendimento : ing.quantidade * lotes;
               const qtdConvertida = converterUnidade(qtdBase, unidadeIng, insumo.unidade);
               if (qtdConvertida === null) continue;
+              
+              if (insumo.quantidade < qtdConvertida) {
+                alert(`Estoque insuficiente de ${insumo.nome}. Necessário: ${qtdConvertida}${insumo.unidade}, Disponível: ${insumo.quantidade}${insumo.unidade}`);
+                return;
+              }
+              
               insumo.quantidade -= qtdConvertida;
               await saveToFirebase('insumos', insumo.id, insumo);
             }
             
+            // Adicionar produto ao estoque
             const produtoExistente = state.produtos.find(p => p.receitaId == receita.id && p.ehIntermediario == ehIntermediario);
             
             if (produtoExistente) {
               produtoExistente.quantidade += rendimento;
+              produtoExistente.custoUnitario = custoUnitario; // ATUALIZA CUSTO
+              if (!ehIntermediario && precoVenda) {
+                produtoExistente.precoVenda = precoVenda;
+              }
               await saveToFirebase('produtos', produtoExistente.id, produtoExistente);
             } else {
               const novoProduto = {
@@ -5091,10 +5238,36 @@
                 ehIntermediario: ehIntermediario,
                 userId: state.user.uid
               };
+              if (ehIntermediario) {
+                novoProduto.unidade = document.getElementById('unidadeIntermediario')?.value || 'un';
+              } else {
+                novoProduto.unidade = 'un';
+              }
               await saveToFirebase('produtos', novoProduto.id, novoProduto);
               state.produtos.push(novoProduto);
             }
             
+            // SALVAR HISTÓRICO DE PRODUÇÃO
+            const historico = {
+              id: Date.now() + Math.random(),
+              data: new Date().toISOString(),
+              receitaId: receita.id,
+              receitaNome: receita.nome,
+              lotes,
+              tipo: ehIntermediario ? 'intermediario' : 'produto_final',
+              produtosGerados: [{
+                nome: receita.nome,
+                quantidade: rendimento
+              }],
+              custoTotal,
+              custoUnitario,
+              precoVenda: ehIntermediario ? null : precoVenda,
+              userId: state.user.uid
+            };
+            await saveToFirebase('producoes', historico.id, historico);
+            state.producoes.push(historico);
+            
+            alert('✅ Produção concluída!');
             state.showModal = false;
             await loadAllData();
             render();
