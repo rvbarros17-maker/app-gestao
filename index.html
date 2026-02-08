@@ -5114,10 +5114,40 @@
               }
             }
             
+            // CALCULAR CUSTOS
+            let custoTotalBase = 0;
+            for (let ing of receita.ingredientes) {
+              const insumo = state.insumos.find(i => i.id == ing.insumoId);
+              if (!insumo) continue;
+              const unidadeIng = ing.unidade || insumo.unidade;
+              const qtdBase = ing.quantidade * lotes;
+              const qtdConvertida = converterUnidade(qtdBase, unidadeIng, insumo.unidade);
+              if (qtdConvertida === null) continue;
+              custoTotalBase += qtdConvertida * insumo.precoMedio;
+            }
+            
+            const quantidadeTotalProduzida = variacoesParaProduzir.reduce((total, vp) => total + vp.quantidade, 0);
+            const custoBaseUnitario = custoTotalBase / quantidadeTotalProduzida;
+            
             // 3. ADICIONAR PRODUTOS AO ESTOQUE
             for (let vp of variacoesParaProduzir) {
               const nomeProduto = vp.variacao.nome;
               const qtdProduzir = vp.quantidade;
+              
+              // Calcular custo dos extras desta variação
+              let custoExtras = 0;
+              if (vp.variacao.extras && vp.variacao.extras.length > 0) {
+                for (let extra of vp.variacao.extras) {
+                  const insumo = state.insumos.find(i => i.id == extra.insumoId);
+                  if (!insumo) continue;
+                  const qtdTotal = extra.qtdPorUnidade;
+                  const qtdConvertida = converterUnidade(qtdTotal, extra.unidade, insumo.unidade);
+                  if (qtdConvertida === null) continue;
+                  custoExtras += qtdConvertida * insumo.precoMedio;
+                }
+              }
+              
+              const custoUnitario = custoBaseUnitario + custoExtras;
               
               // Buscar se produto já existe
               const produtoExistente = state.produtos.find(p => 
@@ -5128,6 +5158,7 @@
               
               if (produtoExistente) {
                 produtoExistente.quantidade += qtdProduzir;
+                produtoExistente.custoUnitario = custoUnitario; // ATUALIZA CUSTO
                 await saveToFirebase('produtos', produtoExistente.id, produtoExistente);
               } else {
                 // Criar novo produto
@@ -5136,7 +5167,7 @@
                   nome: nomeProduto,
                   quantidade: qtdProduzir,
                   unidade: 'un',
-                  custoUnitario: 0, // Usuario define depois
+                  custoUnitario: custoUnitario, // CUSTO CALCULADO
                   precoVenda: 0, // Usuario define depois
                   estoqueMinimo: 10,
                   receitaId: receita.id,
@@ -5149,6 +5180,9 @@
             }
             
             // SALVAR HISTÓRICO DE PRODUÇÃO
+            const custoTotalGeral = custoTotalBase;
+            const custoUnitarioMedio = custoTotalGeral / quantidadeTotalProduzida;
+            
             const historico = {
               id: Date.now(),
               data: new Date().toISOString(),
@@ -5160,7 +5194,8 @@
                 nome: vp.variacao.nome,
                 quantidade: vp.quantidade
               })),
-              custoTotal: receita.custoTotal * lotes,
+              custoTotal: custoTotalGeral,
+              custoUnitario: custoUnitarioMedio,
               userId: state.user.uid
             };
             await saveToFirebase('producoes', historico.id, historico);
