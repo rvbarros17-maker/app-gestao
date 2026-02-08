@@ -556,6 +556,24 @@
     function getUnidadesAtivas() {
       return getTabelaAtual().filter(u => u.ativo).map(u => u.unidade);
     }
+    
+    // Máscara de telefone brasileiro
+    function aplicarMascaraTelefone(valor) {
+      if (!valor) return '';
+      // Remove tudo que não é número
+      valor = valor.replace(/\D/g, '');
+      
+      // Aplica a máscara
+      if (valor.length <= 10) {
+        // Formato: (##) ####-####
+        valor = valor.replace(/^(\d{2})(\d{4})(\d{0,4}).*/, '($1) $2-$3');
+      } else {
+        // Formato: (##) #####-####
+        valor = valor.replace(/^(\d{2})(\d{5})(\d{0,4}).*/, '($1) $2-$3');
+      }
+      
+      return valor;
+    }
 
     async function loadAllData() {
       state.loading = true;
@@ -1812,7 +1830,7 @@
                 ${clientesOrdenados.map(c => `
                   <tr class="border-t cliente-row" data-nome="${c.nome.toLowerCase()}">
                     <td class="px-4 py-3">${c.nome}</td>
-                    <td class="px-4 py-3">${c.telefone}</td>
+                    <td class="px-4 py-3">${aplicarMascaraTelefone(c.telefone)}</td>
                     <td class="px-4 py-3">
                       <span class="${c.saldo < 0 ? 'text-red-600 font-medium' : c.saldo > 0 ? 'text-green-600 font-medium' : ''}">
                         R$ ${Math.abs(c.saldo).toFixed(2)}
@@ -3154,6 +3172,8 @@
       
       if (state.modalType === 'cliente') {
         const c = state.editingId ? state.clientes.find(x => x.id == state.editingId) : null;
+        const telefoneFormatado = c?.telefone ? aplicarMascaraTelefone(c.telefone) : '';
+        
         modalContent = `
           <h3 class="text-xl font-bold mb-4">${c ? 'Editar Cliente' : 'Novo Cliente'}</h3>
           <div class="space-y-3">
@@ -3163,7 +3183,7 @@
             </div>
             <div>
               <label class="block text-sm font-medium mb-1">Telefone</label>
-              <input type="text" id="telefone" class="w-full border rounded px-3 py-2" value="${c ? c.telefone : ''}">
+              <input type="text" id="telefone" class="w-full border rounded px-3 py-2" value="${telefoneFormatado}" placeholder="(00) 00000-0000" maxlength="15">
             </div>
             <div>
               <label class="block text-sm font-medium mb-1">Saldo</label>
@@ -4378,11 +4398,20 @@
           render();
         });
       });
+      
+      // ===== MÁSCARA DE TELEFONE (Listener) =====
+      const telefoneInput = document.getElementById('telefone');
+      if (telefoneInput) {
+        telefoneInput.addEventListener('input', (e) => {
+          e.target.value = aplicarMascaraTelefone(e.target.value);
+        });
+      }
 
       document.querySelectorAll('[data-action="save-cliente"]').forEach(btn => {
         btn.addEventListener('click', async () => {
           const nome = document.getElementById('nome').value;
-          const telefone = document.getElementById('telefone').value;
+          const telefoneFormatado = document.getElementById('telefone').value;
+          const telefone = telefoneFormatado.replace(/\D/g, ''); // Remove formatação, salva só números
           const saldo = parseFloat(document.getElementById('saldo').value);
           
           if (!nome) return alert('Preencha o nome');
