@@ -51,6 +51,7 @@
       caixas: [],
       caixaAtual: null,
       despesasRecorrentes: [],
+      inventario: [],
       showModal: false,
       modalType: '',
       editingId: null,
@@ -403,6 +404,12 @@
         const daysRemaining = getTrialDaysRemaining();
         // Só mostra banner se NÃO tiver assinatura paga
         state.showTrialBanner = !state.assinaturaPaga && daysRemaining !== null && daysRemaining >= 0;
+        
+        console.log('🔍 Debug Trial:', {
+          assinaturaPaga: state.assinaturaPaga,
+          daysRemaining,
+          showTrialBanner: state.showTrialBanner
+        });
 
         // Bloqueio automático quando trial acabou e não tem assinatura
         if (!state.assinaturaPaga && daysRemaining !== null && daysRemaining < 0 && !state.contaBloqueada) {
@@ -555,7 +562,7 @@
       render();
       
       try {
-        const [insumos, receitas, produtos, clientes, vendas, movimentacoes, caixas, despesasRecorrentes] = await Promise.all([
+        const [insumos, receitas, produtos, clientes, vendas, movimentacoes, caixas, despesasRecorrentes, inventario] = await Promise.all([
           loadFromFirebase('insumos'),
           loadFromFirebase('receitas'),
           loadFromFirebase('produtos'),
@@ -563,7 +570,8 @@
           loadFromFirebase('vendas'),
           loadFromFirebase('movimentacoes'),
           loadFromFirebase('caixas'),
-          loadFromFirebase('despesasRecorrentes')
+          loadFromFirebase('despesasRecorrentes'),
+          loadFromFirebase('inventario')
         ]);
 
         state.insumos = insumos;
@@ -574,15 +582,16 @@
         state.movimentacoes = movimentacoes;
         state.caixas = caixas;
         state.despesasRecorrentes = despesasRecorrentes;
+        state.inventario = inventario;
         
         // Verificar se há caixa aberto
         state.caixaAtual = caixas.find(c => c.status === 'aberto') || null;
         
-        // Carregar data de início do trial
-        await checkTrialPeriod();
-        
-        // Carregar configurações (nome da empresa)
+        // Carregar configurações PRIMEIRO (assinaturaPaga, contaBloqueada, etc)
         await loadConfiguracoes();
+        
+        // DEPOIS verificar trial (já sabe se é pago ou não)
+        await checkTrialPeriod();
         
         // Carregar notificações
         await loadNotificacoes();
@@ -1640,6 +1649,7 @@
         case 'relatorios': return renderRelatorios();
         case 'lista-compras': return renderListaCompras();
         case 'configuracoes': return renderConfiguracoes();
+        case 'inventario': return renderInventario();
         case 'admin': return renderAdmin();
         default: return '<p>Selecione uma aba</p>';
       }
@@ -1737,6 +1747,12 @@
             <div class="text-5xl mb-3">⚙️</div>
             <h3 class="text-xl font-bold mb-2">Configurações</h3>
             <p class="text-sm opacity-90">Personalize seu sistema</p>
+          </button>
+          
+          <button data-nav="inventario" class="bg-gradient-to-br from-teal-500 to-teal-600 text-white p-6 rounded-lg shadow-lg hover:shadow-xl transition-all hover:scale-105">
+            <div class="text-5xl mb-3">🏭</div>
+            <h3 class="text-xl font-bold mb-2">Inventário</h3>
+            <p class="text-sm opacity-90">${state.inventario.length} itens cadastrados</p>
           </button>
           
           ${state.isAdmin ? `
@@ -1905,22 +1921,55 @@
             ${state.receitas.map(r => `
               <div class="border rounded-lg p-4">
                 <div class="flex justify-between items-start mb-3">
-                  <div>
+                  <div class="flex-1">
                     <h3 class="text-lg font-bold">${r.nome}</h3>
                     <p class="text-sm text-gray-600">Custo base: R$ ${r.custoTotal.toFixed(2)}</p>
+                    ${r.variacoes && r.variacoes.length > 0 ? `
+                      <p class="text-xs text-green-600 font-medium mt-1">✨ ${r.variacoes.length} variação(ões) cadastrada(s)</p>
+                    ` : ''}
                   </div>
                   <div class="flex gap-2">
-                     <button data-action="edit-receita" data-id="${r.id}" class="text-blue-500 hover:text-blue-600">✏️</button>
+                    <button data-action="toggle-ingredientes" data-receita-id="${r.id}" class="text-gray-500 hover:text-gray-700 px-2 py-1 text-sm border rounded" title="Ver/Ocultar ingredientes">
+                      👁️
+                    </button>
+                    <button data-action="edit-receita" data-id="${r.id}" class="text-blue-500 hover:text-blue-600">✏️</button>
                     <button data-action="delete-receita" data-id="${r.id}" class="text-red-500 hover:text-red-600">🗑️</button>
                   </div>
                 </div>
-                <div>
-                  <p class="text-sm font-medium mb-1">Ingredientes:</p>
-                  ${r.ingredientes.map(ing => {
-                    const ins = state.insumos.find(x => x.id == ing.insumoId);
-                    const unidade = ing.unidade || ins?.unidade || '';
-                    return `<p class="text-sm text-gray-600">🔸 ${ins?.nome || 'Insumo'}: ${ing.quantidade} ${unidade} (${ing.tipo === 'fixo' ? 'fixo' : 'por unid'})</p>`;
-                  }).join('')}
+                
+                <!-- Ingredientes (ocultos por padrão) -->
+                <div id="ingredientes-${r.id}" class="hidden">
+                  <div class="border-t pt-3 mt-2">
+                    <p class="text-sm font-medium mb-2">📋 Ingredientes Base:</p>
+                    <div class="bg-gray-50 rounded p-3 space-y-1">
+                      ${r.ingredientes.map(ing => {
+                        const ins = state.insumos.find(x => x.id == ing.insumoId);
+                        const unidade = ing.unidade || ins?.unidade || '';
+                        return `<p class="text-sm text-gray-700">🔸 ${ins?.nome || 'Insumo'}: ${ing.quantidade} ${unidade} (${ing.tipo === 'fixo' ? 'fixo' : 'por unid'})</p>`;
+                      }).join('')}
+                    </div>
+                    
+                    ${r.variacoes && r.variacoes.length > 0 ? `
+                      <div class="mt-3">
+                        <p class="text-sm font-medium mb-2">✨ Variações:</p>
+                        <div class="space-y-2">
+                          ${r.variacoes.map(variacao => `
+                            <div class="bg-green-50 border border-green-200 rounded p-3">
+                              <p class="font-medium text-sm text-green-800">${variacao.nome}</p>
+                              ${variacao.extras && variacao.extras.length > 0 ? `
+                                <div class="mt-1 pl-3 space-y-1">
+                                  ${variacao.extras.map(extra => {
+                                    const ins = state.insumos.find(x => x.id == extra.insumoId);
+                                    return `<p class="text-xs text-gray-600">+ ${ins?.nome || 'Insumo'}: ${extra.qtdPorUnidade} ${extra.unidade}/unidade</p>`;
+                                  }).join('')}
+                                </div>
+                              ` : ''}
+                            </div>
+                          `).join('')}
+                        </div>
+                      </div>
+                    ` : ''}
+                  </div>
                 </div>
               </div>
             `).join('')}
@@ -2811,6 +2860,103 @@
       `;
     }
     
+    // ===== INVENTÁRIO =====
+    function renderInventario() {
+      const categorias = ['Equipamento', 'Utensílio', 'Móvel', 'Ferramenta', 'Outro'];
+      const estados = ['Novo', 'Bom', 'Regular', 'Necessita Manutenção', 'Quebrado'];
+      
+      const inventarioPorCategoria = {};
+      categorias.forEach(cat => {
+        inventarioPorCategoria[cat] = state.inventario.filter(i => i.categoria === cat);
+      });
+      
+      const totalValor = state.inventario.reduce((total, item) => total + (item.valorCompra || 0), 0);
+      
+      return `
+        <div class="bg-white rounded-lg shadow p-6">
+          <div class="flex justify-between items-center mb-6">
+            <div>
+              <h2 class="text-3xl font-bold">🏭 Inventário / Patrimônio</h2>
+              <p class="text-gray-600 mt-1">Equipamentos, utensílios e bens do negócio</p>
+            </div>
+            <button data-action="new-inventario" class="bg-teal-500 text-white px-6 py-3 rounded-lg font-bold hover:bg-teal-600 transition">
+              + Novo Item
+            </button>
+          </div>
+          
+          <!-- Resumo -->
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <div class="bg-gradient-to-br from-teal-500 to-teal-600 text-white p-4 rounded-lg">
+              <p class="text-sm opacity-90">Total de Itens</p>
+              <p class="text-3xl font-bold">${state.inventario.length}</p>
+            </div>
+            <div class="bg-gradient-to-br from-blue-500 to-blue-600 text-white p-4 rounded-lg">
+              <p class="text-sm opacity-90">Valor Total</p>
+              <p class="text-3xl font-bold">R$ ${totalValor.toFixed(2)}</p>
+            </div>
+            <div class="bg-gradient-to-br from-orange-500 to-orange-600 text-white p-4 rounded-lg">
+              <p class="text-sm opacity-90">Necessitam Manutenção</p>
+              <p class="text-3xl font-bold">${state.inventario.filter(i => i.estado === 'Necessita Manutenção').length}</p>
+            </div>
+          </div>
+          
+          ${state.inventario.length === 0 ? `
+            <div class="text-center py-20">
+              <div class="text-6xl mb-4">📦</div>
+              <p class="text-gray-500 text-lg">Nenhum item cadastrado ainda</p>
+              <p class="text-gray-400 text-sm mt-2">Clique em "+ Novo Item" para começar</p>
+            </div>
+          ` : `
+            ${categorias.map(categoria => {
+              const itens = inventarioPorCategoria[categoria];
+              if (itens.length === 0) return '';
+              
+              return `
+                <div class="mb-6">
+                  <h3 class="text-lg font-bold mb-3 text-gray-700">${categoria}s (${itens.length})</h3>
+                  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    ${itens.map(item => {
+                      const estadoCor = {
+                        'Novo': 'bg-green-100 text-green-800',
+                        'Bom': 'bg-blue-100 text-blue-800',
+                        'Regular': 'bg-yellow-100 text-yellow-800',
+                        'Necessita Manutenção': 'bg-orange-100 text-orange-800',
+                        'Quebrado': 'bg-red-100 text-red-800'
+                      }[item.estado] || 'bg-gray-100 text-gray-800';
+                      
+                      return `
+                        <div class="border rounded-lg p-4 hover:shadow-md transition">
+                          <div class="flex justify-between items-start mb-3">
+                            <h4 class="font-bold text-gray-800">${item.nome}</h4>
+                            <div class="flex gap-2">
+                              <button data-action="edit-inventario" data-id="${item.id}" class="text-blue-500 hover:text-blue-700" title="Editar">
+                                ✏️
+                              </button>
+                              <button data-action="delete-inventario" data-id="${item.id}" class="text-red-500 hover:text-red-700" title="Excluir">
+                                🗑️
+                              </button>
+                            </div>
+                          </div>
+                          
+                          <div class="space-y-1 text-sm">
+                            <p><span class="text-gray-500">Estado:</span> <span class="px-2 py-1 rounded text-xs font-medium ${estadoCor}">${item.estado}</span></p>
+                            <p><span class="text-gray-500">Compra:</span> ${item.dataCompra ? new Date(item.dataCompra).toLocaleDateString('pt-BR') : '-'}</p>
+                            <p><span class="text-gray-500">Valor:</span> R$ ${(item.valorCompra || 0).toFixed(2)}</p>
+                            ${item.fornecedor ? `<p><span class="text-gray-500">Fornecedor:</span> ${item.fornecedor}</p>` : ''}
+                            ${item.observacoes ? `<p class="text-gray-400 italic text-xs mt-2">${item.observacoes}</p>` : ''}
+                          </div>
+                        </div>
+                      `;
+                    }).join('')}
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          `}
+        </div>
+      `;
+    }
+    
     function renderAdmin() {
       if (!state.isAdmin) {
         return `
@@ -3289,6 +3435,63 @@
             </div>
           </div>
         `;
+      } else if (state.modalType === 'inventario') {
+        const item = state.editingId ? state.inventario.find(x => x.id == state.editingId) : null;
+        const categorias = ['Equipamento', 'Utensílio', 'Móvel', 'Ferramenta', 'Outro'];
+        const estados = ['Novo', 'Bom', 'Regular', 'Necessita Manutenção', 'Quebrado'];
+        
+        modalContent = `
+          <h3 class="text-xl font-bold mb-4">🏭 ${item ? 'Editar Item' : 'Novo Item do Inventário'}</h3>
+          <div class="space-y-3">
+            <div>
+              <label class="block text-sm font-medium mb-1">Nome do Item</label>
+              <input type="text" id="nomeItem" class="w-full border rounded px-3 py-2" placeholder="Ex: Batedeira Industrial" value="${item ? item.nome : ''}">
+            </div>
+            
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-sm font-medium mb-1">Categoria</label>
+                <select id="categoriaItem" class="w-full border rounded px-3 py-2">
+                  ${categorias.map(cat => `<option value="${cat}" ${item?.categoria === cat ? 'selected' : ''}>${cat}</option>`).join('')}
+                </select>
+              </div>
+              
+              <div>
+                <label class="block text-sm font-medium mb-1">Estado</label>
+                <select id="estadoItem" class="w-full border rounded px-3 py-2">
+                  ${estados.map(est => `<option value="${est}" ${item?.estado === est ? 'selected' : ''}>${est}</option>`).join('')}
+                </select>
+              </div>
+            </div>
+            
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-sm font-medium mb-1">Data de Compra</label>
+                <input type="date" id="dataCompraItem" class="w-full border rounded px-3 py-2" value="${item ? item.dataCompra : ''}">
+              </div>
+              
+              <div>
+                <label class="block text-sm font-medium mb-1">Valor de Compra (R$)</label>
+                <input type="number" step="0.01" id="valorCompraItem" class="w-full border rounded px-3 py-2" placeholder="0.00" value="${item ? item.valorCompra : ''}">
+              </div>
+            </div>
+            
+            <div>
+              <label class="block text-sm font-medium mb-1">Fornecedor (opcional)</label>
+              <input type="text" id="fornecedorItem" class="w-full border rounded px-3 py-2" placeholder="Ex: Loja X" value="${item ? item.fornecedor || '' : ''}">
+            </div>
+            
+            <div>
+              <label class="block text-sm font-medium mb-1">Observações (opcional)</label>
+              <textarea id="observacoesItem" rows="3" class="w-full border rounded px-3 py-2" placeholder="Ex: Garantia até 2027, Modelo XYZ...">${item ? item.observacoes || '' : ''}</textarea>
+            </div>
+            
+            <div class="flex gap-2">
+              <button data-action="save-inventario" class="flex-1 bg-teal-500 text-white rounded py-2 hover:bg-teal-600">Salvar</button>
+              <button data-action="close-modal" class="flex-1 bg-gray-300 rounded py-2">Cancelar</button>
+            </div>
+          </div>
+        `;
       } else if (state.modalType === 'venda') {
         const clientesOrdenados = [...state.clientes].sort((a, b) => a.nome.localeCompare(b.nome));
         modalContent = `
@@ -3726,6 +3929,89 @@
         });
       });
       
+      // ===== INVENTÁRIO =====
+      
+      // Novo item
+      document.querySelectorAll('[data-action="new-inventario"]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          state.modalType = 'inventario';
+          state.editingId = null;
+          state.showModal = true;
+          render();
+        });
+      });
+      
+      // Editar item
+      document.querySelectorAll('[data-action="edit-inventario"]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          state.modalType = 'inventario';
+          state.editingId = btn.dataset.id;
+          state.showModal = true;
+          render();
+        });
+      });
+      
+      // Excluir item
+      document.querySelectorAll('[data-action="delete-inventario"]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          if (!confirm('Excluir este item do inventário?')) return;
+          
+          const id = btn.dataset.id;
+          await deleteFromFirebase('inventario', id);
+          state.inventario = state.inventario.filter(i => i.id != id);
+          render();
+        });
+      });
+      
+      // Salvar item
+      document.querySelectorAll('[data-action="save-inventario"]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const nome = document.getElementById('nomeItem')?.value;
+          const categoria = document.getElementById('categoriaItem')?.value;
+          const estado = document.getElementById('estadoItem')?.value;
+          const dataCompra = document.getElementById('dataCompraItem')?.value;
+          const valorCompra = parseFloat(document.getElementById('valorCompraItem')?.value) || 0;
+          const fornecedor = document.getElementById('fornecedorItem')?.value;
+          const observacoes = document.getElementById('observacoesItem')?.value;
+          
+          if (!nome) return alert('Digite o nome do item');
+          
+          if (state.editingId) {
+            // Editar
+            const item = state.inventario.find(i => i.id == state.editingId);
+            if (item) {
+              item.nome = nome;
+              item.categoria = categoria;
+              item.estado = estado;
+              item.dataCompra = dataCompra;
+              item.valorCompra = valorCompra;
+              item.fornecedor = fornecedor;
+              item.observacoes = observacoes;
+              await saveToFirebase('inventario', item.id, item);
+            }
+          } else {
+            // Novo
+            const novoItem = {
+              id: Date.now(),
+              nome,
+              categoria,
+              estado,
+              dataCompra,
+              valorCompra,
+              fornecedor,
+              observacoes,
+              userId: state.user.uid
+            };
+            await saveToFirebase('inventario', novoItem.id, novoItem);
+            state.inventario.push(novoItem);
+          }
+          
+          state.showModal = false;
+          state.editingId = null;
+          render();
+        });
+      });
+      
       // Enviar notificação global (admin)
       document.querySelectorAll('[data-action="enviar-notificacao"]').forEach(btn => {
         btn.addEventListener('click', async () => {
@@ -4063,6 +4349,19 @@
             await deleteFromFirebase('receitas', id);
             state.receitas = state.receitas.filter(r => r.id != id);
             render();
+          }
+        });
+      });
+      
+      // Toggle ingredientes (mostrar/ocultar)
+      document.querySelectorAll('[data-action="toggle-ingredientes"]').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          const receitaId = e.currentTarget.dataset.receitaId;
+          const ingredientesDiv = document.getElementById(`ingredientes-${receitaId}`);
+          if (ingredientesDiv) {
+            ingredientesDiv.classList.toggle('hidden');
+            // Mudar ícone do botão
+            e.currentTarget.innerHTML = ingredientesDiv.classList.contains('hidden') ? '👁️' : '👁️‍🗨️';
           }
         });
       });
