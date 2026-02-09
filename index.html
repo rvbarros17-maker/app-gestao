@@ -379,6 +379,8 @@
 
     // ===== SISTEMA DE TRIAL PERIOD =====
     async function checkTrialPeriod() {
+      if (!state.user) return; // Não verifica se não estiver logado
+      
       try {
         const q = query(collection(db, 'userSettings'), where("userId", "==", state.user.uid));
         const querySnapshot = await getDocs(q);
@@ -629,6 +631,8 @@
     
     // ===== SISTEMA DE NOTIFICAÇÕES =====
     async function loadNotificacoes() {
+      if (!state.user) return; // Não carrega se não estiver logado
+      
       try {
         const notifSnapshot = await getDocs(
           query(
@@ -656,6 +660,8 @@
     }
     
     async function marcarNotificacaoComoLida(notifId) {
+      if (!state.user) return; // Não marca se não estiver logado
+      
       try {
         const notifLidasRef = doc(db, 'notificacoesLidas', state.user.uid);
         const notifLidasDoc = await getDoc(notifLidasRef);
