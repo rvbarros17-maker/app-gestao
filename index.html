@@ -2153,7 +2153,7 @@
                   </div>
                   <div class="text-sm text-gray-600">
                     ${v.itens.map(it => {
-                      const prod = state.produtos.find(p => p.id == it.produtoId);
+                      const prod = state.produtos.find(p => Number(p.id) === Number(it.produtoId));
                       return `<p>• ${prod?.nome || 'Produto'} x${it.quantidade}</p>`;
                     }).join('')}
                   </div>
@@ -5097,6 +5097,61 @@
               return alert('Digite a quantidade de pelo menos uma variação');
             }
             
+            // ===== VALIDAR ESTOQUE DE TODOS OS INGREDIENTES =====
+            const insuficientes = [];
+            
+            // 1. Validar ingredientes base
+            for (let ing of receita.ingredientes) {
+              const insumo = state.insumos.find(i => i.id == ing.insumoId);
+              if (!insumo) continue;
+              
+              const unidadeIng = ing.unidade || insumo.unidade;
+              const qtdBase = ing.quantidade * lotes;
+              const qtdConvertida = converterUnidade(qtdBase, unidadeIng, insumo.unidade);
+              
+              if (qtdConvertida === null) {
+                insuficientes.push(`❌ ${insumo.nome}: Unidade incompatível (${unidadeIng} ≠ ${insumo.unidade})`);
+                continue;
+              }
+              
+              if (insumo.quantidade < qtdConvertida) {
+                insuficientes.push(`❌ ${insumo.nome}: Necessário ${qtdConvertida.toFixed(2)}${insumo.unidade}, Disponível ${insumo.quantidade.toFixed(2)}${insumo.unidade}`);
+              }
+            }
+            
+            // 2. Validar ingredientes extras de cada variação
+            for (let vp of variacoesParaProduzir) {
+              const variacao = vp.variacao;
+              const qtdProduzir = vp.quantidade;
+              
+              if (!variacao.extras || variacao.extras.length === 0) continue;
+              
+              for (let extra of variacao.extras) {
+                const insumo = state.insumos.find(i => i.id == extra.insumoId);
+                if (!insumo) continue;
+                
+                const qtdTotal = extra.qtdPorUnidade * qtdProduzir;
+                const qtdConvertida = converterUnidade(qtdTotal, extra.unidade, insumo.unidade);
+                
+                if (qtdConvertida === null) {
+                  insuficientes.push(`❌ ${insumo.nome} (${variacao.nome}): Unidade incompatível`);
+                  continue;
+                }
+                
+                if (insumo.quantidade < qtdConvertida) {
+                  insuficientes.push(`❌ ${insumo.nome} (${variacao.nome}): Necessário ${qtdConvertida.toFixed(2)}${insumo.unidade}, Disponível ${insumo.quantidade.toFixed(2)}${insumo.unidade}`);
+                }
+              }
+            }
+            
+            // Se tem ingredientes insuficientes, mostrar TODOS
+            if (insuficientes.length > 0) {
+              alert(`⚠️ ESTOQUE INSUFICIENTE:\n\n${insuficientes.join('\n')}`);
+              return;
+            }
+            
+            // ===== SE CHEGOU AQUI, TEM ESTOQUE! PODE PRODUZIR! =====
+            
             // 1. DAR BAIXA NOS INGREDIENTES BASE (multiplicado por lotes)
             for (let ing of receita.ingredientes) {
               const insumo = state.insumos.find(i => i.id == ing.insumoId);
@@ -5165,6 +5220,7 @@
             const custoBaseUnitario = custoTotalBase / quantidadeTotalProduzida;
             
             // 3. ADICIONAR PRODUTOS AO ESTOQUE
+            let contadorId = 0;
             for (let vp of variacoesParaProduzir) {
               const nomeProduto = vp.variacao.nome;
               const qtdProduzir = vp.quantidade;
@@ -5199,7 +5255,7 @@
               } else {
                 // Criar novo produto
                 const novoProduto = {
-                  id: Date.now() + Math.random(),
+                  id: Date.now() + contadorId,
                   nome: nomeProduto,
                   quantidade: qtdProduzir,
                   unidade: 'un',
@@ -5212,6 +5268,7 @@
                 };
                 await saveToFirebase('produtos', novoProduto.id, novoProduto);
                 state.produtos.push(novoProduto);
+                contadorId++;
               }
             }
             
